@@ -437,6 +437,104 @@
   cursor: not-allowed;
 }
 
+/* 체력 / 허기 / 방어 바 */
+.mc__vitals {
+  position: absolute;
+  bottom: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(12, 16, 26, 0.5);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+}
+
+.vitals {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.vitals__icon {
+  width: 16px;
+  font-size: 13px;
+  text-align: center;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+
+.vitals__track {
+  position: relative;
+  width: 190px;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22) inset;
+}
+
+.vitals__fill {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.15s ease;
+}
+
+.vitals__track--hp .vitals__fill {
+  background: linear-gradient(180deg, #ff6b6b, #d13b3b);
+}
+
+.vitals__track--hunger .vitals__fill {
+  background: linear-gradient(180deg, #f2b24b, #c9832a);
+}
+
+.vitals__track--armor .vitals__fill {
+  background: linear-gradient(180deg, #9fd4ff, #4e91d6);
+}
+
+.vitals__num {
+  min-width: 42px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+  text-align: right;
+}
+
+/* 갑옷 장비 칸 */
+.mc__armor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.mc__armor-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.mc__armor-name {
+  font-size: 11px;
+  color: #b9c6d8;
+}
+
+.mc__armor-points {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9fd4ff;
+}
+
+.mc__furnace-body {
+  max-width: 660px;
+}
+
 /* 하단 도움말 */
 .mc__help {
   display: flex;
@@ -474,6 +572,10 @@ kbd {
 
   .mc__grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .vitals__track {
+    width: 128px;
   }
 
   .page__title {

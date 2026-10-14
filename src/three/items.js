@@ -17,12 +17,19 @@ export const ITEM = {
   GOLD_ORE: 12,
   DIAMOND_ORE: 13,
   BEDROCK: 14,
+  FURNACE: 15,
   // 재료
   STICK: 20,
   COAL: 21,
   IRON_INGOT: 22,
   GOLD_INGOT: 23,
   DIAMOND: 24,
+  LEATHER: 60,
+  // 음식
+  BEEF_RAW: 61,
+  BEEF_COOKED: 62,
+  PORK_RAW: 63,
+  PORK_COOKED: 64,
   // 도구 (곡괭이)
   WOOD_PICKAXE: 40,
   STONE_PICKAXE: 41,
@@ -38,11 +45,31 @@ export const ITEM = {
   STONE_SHOVEL: 49,
   IRON_SHOVEL: 50,
   DIAMOND_SHOVEL: 51,
+  // 갑옷 (가죽)
+  LEATHER_HELMET: 70,
+  LEATHER_CHEST: 71,
+  LEATHER_LEGS: 72,
+  LEATHER_BOOTS: 73,
+  // 갑옷 (철)
+  IRON_HELMET: 74,
+  IRON_CHEST: 75,
+  IRON_LEGS: 76,
+  IRON_BOOTS: 77,
+  // 갑옷 (다이아몬드)
+  DIAMOND_HELMET: 78,
+  DIAMOND_CHEST: 79,
+  DIAMOND_LEGS: 80,
+  DIAMOND_BOOTS: 81,
 }
 
 const block = (name, tile) => ({ name, tile, block: true, stack: 64 })
 const mat = (name, tile) => ({ name, tile, stack: 64 })
 const tool = (name, tile, kind, tier) => ({ name, tile, kind, tier, stack: 1 })
+const food = (name, tile, hunger) => ({ name, tile, food: { hunger }, stack: 64 })
+const armor = (name, tile, part, points) => ({ name, tile, armor: part, armorPoints: points, stack: 1 })
+
+export const ARMOR_PARTS = ['helmet', 'chest', 'legs', 'boots']
+export const ARMOR_PART_NAME = { helmet: '투구', chest: '흉갑', legs: '레깅스', boots: '부츠' }
 
 export const ITEMS = {
   [ITEM.GRASS]: block('잔디', TILE.GRASS_SIDE),
@@ -59,11 +86,17 @@ export const ITEMS = {
   [ITEM.GOLD_ORE]: block('금 원석', TILE.GOLD_ORE),
   [ITEM.DIAMOND_ORE]: block('다이아몬드 원석', TILE.DIAMOND_ORE),
   [ITEM.BEDROCK]: block('기반암', TILE.BEDROCK),
+  [ITEM.FURNACE]: block('화로', TILE.FURNACE_FRONT),
   [ITEM.STICK]: mat('막대기', TILE.STICK),
   [ITEM.COAL]: mat('석탄', TILE.COAL),
   [ITEM.IRON_INGOT]: mat('철 주괴', TILE.IRON_INGOT),
   [ITEM.GOLD_INGOT]: mat('금 주괴', TILE.GOLD_INGOT),
   [ITEM.DIAMOND]: mat('다이아몬드', TILE.DIAMOND),
+  [ITEM.LEATHER]: mat('가죽', TILE.LEATHER),
+  [ITEM.BEEF_RAW]: food('익히지 않은 소고기', TILE.BEEF_RAW, 3),
+  [ITEM.BEEF_COOKED]: food('스테이크', TILE.BEEF_COOKED, 8),
+  [ITEM.PORK_RAW]: food('익히지 않은 돼지고기', TILE.PORK_RAW, 3),
+  [ITEM.PORK_COOKED]: food('구운 돼지고기', TILE.PORK_COOKED, 8),
   [ITEM.WOOD_PICKAXE]: tool('나무 곡괭이', TILE.PICK_WOOD, 'pickaxe', 1),
   [ITEM.STONE_PICKAXE]: tool('돌 곡괭이', TILE.PICK_STONE, 'pickaxe', 2),
   [ITEM.IRON_PICKAXE]: tool('철 곡괭이', TILE.PICK_IRON, 'pickaxe', 3),
@@ -76,6 +109,18 @@ export const ITEMS = {
   [ITEM.STONE_SHOVEL]: tool('돌 삽', TILE.SHOVEL_STONE, 'shovel', 2),
   [ITEM.IRON_SHOVEL]: tool('철 삽', TILE.SHOVEL_IRON, 'shovel', 3),
   [ITEM.DIAMOND_SHOVEL]: tool('다이아몬드 삽', TILE.SHOVEL_DIAMOND, 'shovel', 4),
+  [ITEM.LEATHER_HELMET]: armor('가죽 투구', TILE.HELMET_LEATHER, 'helmet', 1),
+  [ITEM.LEATHER_CHEST]: armor('가죽 흉갑', TILE.CHEST_LEATHER, 'chest', 3),
+  [ITEM.LEATHER_LEGS]: armor('가죽 레깅스', TILE.LEGS_LEATHER, 'legs', 2),
+  [ITEM.LEATHER_BOOTS]: armor('가죽 부츠', TILE.BOOTS_LEATHER, 'boots', 1),
+  [ITEM.IRON_HELMET]: armor('철 투구', TILE.HELMET_IRON, 'helmet', 2),
+  [ITEM.IRON_CHEST]: armor('철 흉갑', TILE.CHEST_IRON, 'chest', 6),
+  [ITEM.IRON_LEGS]: armor('철 레깅스', TILE.LEGS_IRON, 'legs', 5),
+  [ITEM.IRON_BOOTS]: armor('철 부츠', TILE.BOOTS_IRON, 'boots', 2),
+  [ITEM.DIAMOND_HELMET]: armor('다이아몬드 투구', TILE.HELMET_DIAMOND, 'helmet', 3),
+  [ITEM.DIAMOND_CHEST]: armor('다이아몬드 흉갑', TILE.CHEST_DIAMOND, 'chest', 8),
+  [ITEM.DIAMOND_LEGS]: armor('다이아몬드 레깅스', TILE.LEGS_DIAMOND, 'legs', 6),
+  [ITEM.DIAMOND_BOOTS]: armor('다이아몬드 부츠', TILE.BOOTS_DIAMOND, 'boots', 3),
 }
 
 // 도구 티어 이름 (0 = 맨손)
@@ -99,6 +144,7 @@ export const BLOCK_PROPS = {
   [ITEM.STONE]: { hardness: 1.5, tool: 'pickaxe', minTier: 1, drops: ITEM.COBBLE },
   [ITEM.COBBLE]: { hardness: 2.0, tool: 'pickaxe', minTier: 1, drops: ITEM.COBBLE },
   [ITEM.BRICK]: { hardness: 2.0, tool: 'pickaxe', minTier: 1, drops: ITEM.BRICK },
+  [ITEM.FURNACE]: { hardness: 3.0, tool: 'pickaxe', minTier: 1, drops: ITEM.FURNACE },
   [ITEM.COAL_ORE]: { hardness: 3.0, tool: 'pickaxe', minTier: 1, drops: ITEM.COAL },
   [ITEM.IRON_ORE]: { hardness: 3.0, tool: 'pickaxe', minTier: 2, drops: ITEM.IRON_INGOT },
   [ITEM.GOLD_ORE]: { hardness: 3.0, tool: 'pickaxe', minTier: 3, drops: ITEM.GOLD_INGOT },
@@ -106,7 +152,6 @@ export const BLOCK_PROPS = {
   [ITEM.BEDROCK]: { hardness: Infinity, tool: 'pickaxe', minTier: 99, drops: 0 },
 }
 
-// 이 블록을 캘 수 있는가? (도구가 없거나 티어가 낮으면 못 캠)
 export function canHarvest(blockId, held) {
   const props = BLOCK_PROPS[blockId]
   if (!props) return false
@@ -116,7 +161,6 @@ export function canHarvest(blockId, held) {
   return !!(item && item.kind === props.tool && (item.tier || 0) >= props.minTier)
 }
 
-// 누적 시간 배율: 올바른 도구 + 충분한 티어 → 티어 배율, 아니면 1(맨손 속도)
 export function miningSpeed(blockId, held) {
   const props = BLOCK_PROPS[blockId]
   if (!props || !props.tool) return 1
@@ -126,7 +170,6 @@ export function miningSpeed(blockId, held) {
   return TIER_SPEED[item.tier] || 1
 }
 
-// 어떤 도구가 필요한지 안내 문구
 export function requiredToolText(blockId) {
   const props = BLOCK_PROPS[blockId]
   if (!props || !props.tool) return ''
@@ -139,6 +182,7 @@ export function requiredToolText(blockId) {
 export const RECIPES = [
   { id: 'planks', output: { id: ITEM.PLANK, count: 4 }, cost: [{ id: ITEM.LOG, count: 1 }] },
   { id: 'sticks', output: { id: ITEM.STICK, count: 4 }, cost: [{ id: ITEM.PLANK, count: 2 }] },
+  { id: 'furnace', output: { id: ITEM.FURNACE, count: 1 }, cost: [{ id: ITEM.COBBLE, count: 8 }] },
 ]
 
 const TOOL_MATS = [
@@ -149,21 +193,9 @@ const TOOL_MATS = [
 ]
 
 const TOOL_KINDS = [
-  {
-    name: '곡괭이',
-    head: 3,
-    ids: [ITEM.WOOD_PICKAXE, ITEM.STONE_PICKAXE, ITEM.IRON_PICKAXE, ITEM.DIAMOND_PICKAXE],
-  },
-  {
-    name: '도끼',
-    head: 3,
-    ids: [ITEM.WOOD_AXE, ITEM.STONE_AXE, ITEM.IRON_AXE, ITEM.DIAMOND_AXE],
-  },
-  {
-    name: '삽',
-    head: 1,
-    ids: [ITEM.WOOD_SHOVEL, ITEM.STONE_SHOVEL, ITEM.IRON_SHOVEL, ITEM.DIAMOND_SHOVEL],
-  },
+  { head: 3, ids: [ITEM.WOOD_PICKAXE, ITEM.STONE_PICKAXE, ITEM.IRON_PICKAXE, ITEM.DIAMOND_PICKAXE] },
+  { head: 3, ids: [ITEM.WOOD_AXE, ITEM.STONE_AXE, ITEM.IRON_AXE, ITEM.DIAMOND_AXE] },
+  { head: 1, ids: [ITEM.WOOD_SHOVEL, ITEM.STONE_SHOVEL, ITEM.IRON_SHOVEL, ITEM.DIAMOND_SHOVEL] },
 ]
 
 for (const kind of TOOL_KINDS) {
@@ -179,3 +211,28 @@ for (const kind of TOOL_KINDS) {
     })
   })
 }
+
+// 갑옷 레시피 (재료: 가죽 / 철 / 다이아몬드)
+const ARMOR_MATS = [
+  [ITEM.LEATHER, [ITEM.LEATHER_HELMET, ITEM.LEATHER_CHEST, ITEM.LEATHER_LEGS, ITEM.LEATHER_BOOTS]],
+  [ITEM.IRON_INGOT, [ITEM.IRON_HELMET, ITEM.IRON_CHEST, ITEM.IRON_LEGS, ITEM.IRON_BOOTS]],
+  [ITEM.DIAMOND, [ITEM.DIAMOND_HELMET, ITEM.DIAMOND_CHEST, ITEM.DIAMOND_LEGS, ITEM.DIAMOND_BOOTS]],
+]
+const ARMOR_COST = { helmet: 5, chest: 8, legs: 7, boots: 4 }
+
+ARMOR_MATS.forEach(([matId, ids]) => {
+  ARMOR_PARTS.forEach((part, i) => {
+    const outId = ids[i]
+    RECIPES.push({
+      id: `armor_${outId}`,
+      output: { id: outId, count: 1 },
+      cost: [{ id: matId, count: ARMOR_COST[part] }],
+    })
+  })
+})
+
+// 화로 조리 레시피 (원재료 + 연료 -> 구운 음식)
+export const COOK_RECIPES = [
+  { id: 'cook_beef', input: ITEM.BEEF_RAW, output: ITEM.BEEF_COOKED, fuel: ITEM.COAL, fuelCount: 1 },
+  { id: 'cook_pork', input: ITEM.PORK_RAW, output: ITEM.PORK_COOKED, fuel: ITEM.COAL, fuelCount: 1 },
+]

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MinecraftEngine from '../three/MinecraftEngine'
-import { ITEMS, RECIPES, TIER_NAME } from '../three/items'
+import { ITEMS, RECIPES, COOK_RECIPES, TIER_NAME, ARMOR_PARTS, ARMOR_PART_NAME } from '../three/items'
 import { tileDataURL } from '../three/textures'
 
 const INITIAL_STATE = {
@@ -9,7 +9,10 @@ const INITIAL_STATE = {
   fallback: false,
   lockBlocked: false,
   inventoryOpen: false,
+  furnaceOpen: false,
 }
+
+const INITIAL_VITALS = { health: 20, hunger: 20, armor: 0, maxHealth: 20, maxHunger: 20 }
 
 const HOTBAR_SIZE = 9
 const INVENTORY_SIZE = 36
@@ -45,13 +48,62 @@ function Slot({ slot, active, onClick, showKey, index }) {
   )
 }
 
+function VitalsBar({ value, max, icon, label, tone }) {
+  const pct = Math.max(0, Math.min(1, value / max)) * 100
+  return (
+    <div className="vitals" title={`${label} ${Math.round(value)}/${max}`}>
+      <span className="vitals__icon">{icon}</span>
+      <span className={`vitals__track vitals__track--${tone}`}>
+        <span className="vitals__fill" style={{ width: `${pct}%` }} />
+      </span>
+      <span className="vitals__num">
+        {Math.round(value)}/{max}
+      </span>
+    </div>
+  )
+}
+
+function RecipeRow({ recipe, slots, onCraft, fuel }) {
+  const ok = recipe.cost.every((c) => countIn(slots, c.id) >= c.count)
+  return (
+    <div className={`mc__recipe${ok ? '' : ' mc__recipe--off'}`}>
+      <div className="mc__recipe-out">
+        <img src={getIcons()[recipe.output.id]} alt="" />
+        <span>
+          {ITEMS[recipe.output.id].name}
+          {recipe.output.count > 1 ? ` x${recipe.output.count}` : ''}
+        </span>
+      </div>
+      <div className="mc__recipe-cost">
+        {recipe.cost.map((c) => (
+          <span key={c.id} className="mc__cost">
+            <img src={getIcons()[c.id]} alt="" />
+            <em className={countIn(slots, c.id) >= c.count ? '' : 'mc__cost--lack'}>
+              {countIn(slots, c.id)}/{c.count}
+            </em>
+          </span>
+        ))}
+      </div>
+      <button type="button" className="mc__craft" disabled={!ok} onClick={onCraft}>
+        {fuel ? '굽기' : '제작'}
+      </button>
+    </div>
+  )
+}
+
 export default function MinecraftGame() {
   const containerRef = useRef(null)
   const engineRef = useRef(null)
   const miningRef = useRef(null)
 
   const [state, setState] = useState(INITIAL_STATE)
-  const [inventory, setInventory] = useState({ slots: new Array(INVENTORY_SIZE).fill(null), hotbarIndex: 0 })
+  const [inventory, setInventory] = useState({
+    slots: new Array(INVENTORY_SIZE).fill(null),
+    hotbarIndex: 0,
+    armor: { helmet: null, chest: null, legs: null, boots: null },
+    armorPoints: 0,
+  })
+  const [vitals, setVitals] = useState(INITIAL_VITALS)
   const [fps, setFps] = useState(0)
   const [toasts, setToasts] = useState([])
 
@@ -68,6 +120,7 @@ export default function MinecraftGame() {
       onState: setState,
       onFps: setFps,
       onInventory: setInventory,
+      onVitals: setVitals,
       onToast: pushToast,
       onMining: (p) => {
         const el = miningRef.current
@@ -99,7 +152,7 @@ export default function MinecraftGame() {
       }
     }
     const handleWheel = (event) => {
-      if (!state.running || state.inventoryOpen) return
+      if (!state.running || state.inventoryOpen || state.furnaceOpen) return
       engineRef.current?.cycleHotbar(event.deltaY > 0 ? 1 : -1)
     }
     window.addEventListener('keydown', handleKey)
@@ -108,12 +161,12 @@ export default function MinecraftGame() {
       window.removeEventListener('keydown', handleKey)
       window.removeEventListener('wheel', handleWheel)
     }
-  }, [state.running, state.inventoryOpen])
+  }, [state.running, state.inventoryOpen, state.furnaceOpen])
 
   const start = useCallback(() => engineRef.current?.start(), [])
 
-  const { running, locked, fallback, lockBlocked, inventoryOpen } = state
-  const { slots, hotbarIndex } = inventory
+  const { running, locked, fallback, lockBlocked, inventoryOpen, furnaceOpen } = state
+  const { slots, hotbarIndex, armor } = inventory
   const held = slots[hotbarIndex]
 
   const craftable = useMemo(
@@ -121,6 +174,22 @@ export default function MinecraftGame() {
       RECIPES.map((r) => ({
         recipe: r,
         ok: r.cost.every((c) => countIn(slots, c.id) >= c.count),
+      })),
+    [slots],
+  )
+
+  const cookable = useMemo(
+    () =>
+      COOK_RECIPES.map((r) => ({
+        recipe: {
+          id: r.id,
+          output: { id: r.output, count: 1 },
+          cost: [
+            { id: r.input, count: 1 },
+            { id: r.fuel, count: r.fuelCount },
+          ],
+        },
+        ok: countIn(slots, r.input) >= 1 && countIn(slots, r.fuel) >= r.fuelCount,
       })),
     [slots],
   )
@@ -146,10 +215,20 @@ export default function MinecraftGame() {
           ))}
         </div>
 
+        {running && (
+          <div className="mc__vitals">
+            <VitalsBar value={vitals.health} max={vitals.maxHealth} icon="❤️" label="체력" tone="hp" />
+            <VitalsBar value={vitals.hunger} max={vitals.maxHunger} icon="🍗" label="허기" tone="hunger" />
+            <VitalsBar value={vitals.armor} max={20} icon="🛡️" label="방어" tone="armor" />
+          </div>
+        )}
+
         {!running && (
           <div className="mc__overlay">
             <h2>⛏️ 미니 마인크래프트</h2>
-            <p>블록을 캐서 재료를 모으고, 도구를 제작해 더 단단한 블록을 캐보세요.</p>
+            <p>
+              블록을 캐서 재료를 모으고, 도구·갑옷을 만들고, 동물을 잡아 화로에 고기를 구워 드세요.
+            </p>
             <button type="button" className="mc__btn" onClick={start}>
               게임 시작
             </button>
@@ -172,6 +251,22 @@ export default function MinecraftGame() {
 
             <div className="mc__inv-body">
               <div className="mc__inv-left">
+                <div className="mc__inv-label">장비</div>
+                <div className="mc__armor">
+                  {ARMOR_PARTS.map((part) => (
+                    <div key={part} className="mc__armor-slot">
+                      <Slot
+                        slot={armor[part]}
+                        onClick={() => engineRef.current?.unequipArmor(part)}
+                        showKey={false}
+                        index={-1}
+                      />
+                      <span className="mc__armor-name">{ARMOR_PART_NAME[part]}</span>
+                    </div>
+                  ))}
+                  <div className="mc__armor-points">방어 {inventory.armorPoints || 0}/20</div>
+                </div>
+
                 <div className="mc__inv-label">보관함</div>
                 <div className="mc__grid">
                   {slots.map((slot, i) => (
@@ -181,51 +276,54 @@ export default function MinecraftGame() {
                       index={i}
                       active={i === hotbarIndex}
                       showKey={i < HOTBAR_SIZE}
-                      onClick={() => {
-                        if (i < HOTBAR_SIZE) engineRef.current?.setHotbarIndex(i)
-                        else engineRef.current?.swapWithHotbar(i)
-                      }}
+                      onClick={() => engineRef.current?.clickSlot(i)}
                     />
                   ))}
                 </div>
                 <p className="mc__inv-note">
-                  핫바(1~9)를 고른 뒤 보관함 칸을 클릭하면 서로 바뀝니다.
+                  갑옷을 클릭하면 장착됩니다. 핫바(1~9)를 고른 뒤 보관함 칸을 클릭하면 서로 바뀝니다.
                 </p>
               </div>
 
               <div className="mc__inv-right">
                 <div className="mc__inv-label">제작</div>
                 <div className="mc__recipes">
-                  {craftable.map(({ recipe, ok }) => (
-                    <div key={recipe.id} className={`mc__recipe${ok ? '' : ' mc__recipe--off'}`}>
-                      <div className="mc__recipe-out">
-                        <img src={getIcons()[recipe.output.id]} alt="" />
-                        <span>
-                          {ITEMS[recipe.output.id].name}
-                          {recipe.output.count > 1 ? ` x${recipe.output.count}` : ''}
-                        </span>
-                      </div>
-                      <div className="mc__recipe-cost">
-                        {recipe.cost.map((c) => (
-                          <span key={c.id} className="mc__cost">
-                            <img src={getIcons()[c.id]} alt="" />
-                            <em className={countIn(slots, c.id) >= c.count ? '' : 'mc__cost--lack'}>
-                              {countIn(slots, c.id)}/{c.count}
-                            </em>
-                          </span>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        className="mc__craft"
-                        disabled={!ok}
-                        onClick={() => engineRef.current?.craft(recipe.id)}
-                      >
-                        제작
-                      </button>
-                    </div>
+                  {craftable.map(({ recipe }) => (
+                    <RecipeRow
+                      key={recipe.id}
+                      recipe={recipe}
+                      slots={slots}
+                      onCraft={() => engineRef.current?.craft(recipe.id)}
+                    />
                   ))}
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {running && furnaceOpen && (
+          <div className="mc__inv mc__furnace">
+            <div className="mc__inv-head">
+              <h3>🔥 화로</h3>
+              <button type="button" className="mc__inv-close" onClick={() => engineRef.current?.closeFurnace()}>
+                닫기 (Esc)
+              </button>
+            </div>
+            <div className="mc__furnace-body">
+              <p className="mc__inv-note">
+                석탄을 연료로 날고기를 구울 수 있습니다. 구운 고기는 허기를 더 많이 채웁니다.
+              </p>
+              <div className="mc__recipes">
+                {cookable.map(({ recipe }) => (
+                  <RecipeRow
+                    key={recipe.id}
+                    recipe={recipe}
+                    slots={slots}
+                    fuel
+                    onCraft={() => engineRef.current?.cook(recipe.id)}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -245,7 +343,12 @@ export default function MinecraftGame() {
             ))}
             <div className="hotbar__name">
               {held ? `${ITEMS[held.id].name}${held.count > 1 ? ` x${held.count}` : ''}` : '빈 손'}
-              {held && ITEMS[held.id].kind ? ` · ${TIER_NAME[ITEMS[held.id].tier]} ${ITEMS[held.id].kind === 'pickaxe' ? '곡괭이' : ITEMS[held.id].kind === 'axe' ? '도끼' : '삽'}` : ''}
+              {held && ITEMS[held.id].kind
+                ? ` · ${TIER_NAME[ITEMS[held.id].tier]} ${
+                    ITEMS[held.id].kind === 'pickaxe' ? '곡괭이' : ITEMS[held.id].kind === 'axe' ? '도끼' : '삽'
+                  }`
+                : ''}
+              {held && ITEMS[held.id].food ? ' · 우클릭으로 먹기' : ''}
             </div>
           </div>
         )}
@@ -264,7 +367,7 @@ export default function MinecraftGame() {
         <span>
           <kbd>E</kbd> 인벤토리/제작
         </span>
-        <span>{locked ? '마우스 시점 · 좌클릭 꾹 캐기 · 우클릭 설치' : '드래그 시점 · 좌클릭 꾹 캐기 · 우클릭 설치'}</span>
+        <span>{locked ? '좌클릭 꾹 캐기/공격 · 우클릭 설치/먹기/화로' : '드래그 시점 · 좌클릭 캐기/공격 · 우클릭 설치/먹기/화로'}</span>
         <span>
           <kbd>1</kbd>~<kbd>9</kbd> / 휠 아이템 선택
         </span>

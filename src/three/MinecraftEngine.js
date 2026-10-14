@@ -1,13 +1,17 @@
 import * as THREE from 'three'
 import { createAtlasTexture } from './textures'
 import {
+  ITEM,
   ITEMS,
+  ARMOR_PARTS,
   BLOCK_PROPS,
+  COOK_RECIPES,
   canHarvest,
   miningSpeed,
   requiredToolText,
   RECIPES,
 } from './items'
+import { MOB_TYPES, createMobObject } from './mobs'
 import {
   World,
   generateTerrain,
@@ -34,6 +38,12 @@ const MAX_PITCH = Math.PI / 2 - 0.02
 const HOTBAR_SIZE = 9
 const INVENTORY_SIZE = 36
 
+const MAX_HEALTH = 20
+const MAX_HUNGER = 20
+const MOB_MAX = 12
+const MOB_SPAWN_INTERVAL = 10
+const ATTACK_COOLDOWN = 0.35
+
 export default class MinecraftEngine {
   constructor(container, options = {}) {
     this.container = container
@@ -42,12 +52,15 @@ export default class MinecraftEngine {
     this.onInventory = options.onInventory || (() => {})
     this.onToast = options.onToast || (() => {})
     this.onMining = options.onMining || (() => {})
+    this.onVitals = options.onVitals || (() => {})
 
     // active: 게임 진행 중 여부. locked: 포인터 락 사용 여부.
     this.active = false
     this.locked = false
     this.lockBlocked = false // 이 환경에서 포인터 락이 아예 불가능한 경우
+    this.lockBeforeUI = false
     this.inventoryOpen = false
+    this.furnaceOpen = false
     this.dragging = false
     this.dragButton = 0
     this.dragMoved = 0
@@ -59,14 +72,31 @@ export default class MinecraftEngine {
     this.onGround = false
     this.hit = null
 
+    // 생명력 / 허기 / 갑옷
+    this.health = MAX_HEALTH
+    this.hunger = MAX_HUNGER
+    this.armor = { helmet: null, chest: null, legs: null, boots: null }
+    this.regenTimer = 0
+    this.starveTimer = 0
+    this.lastVitals = { health: -1, hunger: -1, armor: -1 }
+
+    // 낙하 데미지
+    this.maxFallY = 0
+    this.wasAirborne = false
+
     // 채굴 상태
     this.miningHeld = false
     this.miningTarget = null
     this.miningProgress = 0
+    this.attackCooldown = 0
 
     // 인벤토리 (앞 9칸 = 핫바)
     this.slots = new Array(INVENTORY_SIZE).fill(null)
     this.hotbarIndex = 0
+
+    // 동물
+    this.mobs = []
+    this.mobTimer = MOB_SPAWN_INTERVAL
 
     // 토스트
     this.toastSeq = 0
@@ -100,6 +130,10 @@ export default class MinecraftEngine {
     this.chunks = new Map()
     this.buildAllChunks()
 
+    // 동물 그룹
+    this.mobGroup = new THREE.Group()
+    this.scene.add(this.mobGroup)
+
     // 바라보는 블록 하이라이트
     this.highlight = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004)),
@@ -108,12 +142,20 @@ export default class MinecraftEngine {
     this.highlight.visible = false
     this.scene.add(this.highlight)
 
+    this.raycaster = new THREE.Raycaster()
+    this.raycaster.far = REACH + 1
+    this.ndc = new THREE.Vector2(0, 0)
+
     // 플레이어 초기 위치
     const spawnY = this.world.surfaceHeight(Math.floor(WORLD_X / 2), Math.floor(WORLD_Z / 2))
     this.pos = new THREE.Vector3(WORLD_X / 2 + 0.5, spawnY + EPS, WORLD_Z / 2 + 0.5)
     this.vel = new THREE.Vector3()
     this.yaw = 0
     this.pitch = 0
+    this.maxFallY = this.pos.y
+
+    // 초기 동물 배치
+    for (let i = 0; i < 8; i += 1) this.spawnMob(true)
 
     this.clockLast = performance.now()
     this.fpsAccumulator = 0
@@ -123,6 +165,7 @@ export default class MinecraftEngine {
     this.bindEvents()
     this.applyCamera()
     this.emitInventory()
+    this.emitVitals(true)
     this.loop()
   }
 
@@ -131,15 +174,17 @@ export default class MinecraftEngine {
   bindEvents() {
     this.handleKeyDown = (e) => {
       this.keys.add(e.code)
-      if (e.code === 'KeyF' && !this.inventoryOpen) this.fly = !this.fly
-      if (e.code === 'KeyE' && this.active) {
+      if (e.code === 'KeyF' && !this.isUiOpen()) this.fly = !this.fly
+      if (e.code === 'KeyE' && this.active && !this.furnaceOpen) {
         e.preventDefault()
         this.toggleInventory()
       }
-      // Esc: 인벤토리 닫기 → 포인터 락 없는 환경에선 일시정지
+      // Esc: 인벤토리/화로 닫기 → 포인터 락 없는 환경에선 일시정지
       if (e.code === 'Escape') {
         if (this.inventoryOpen) {
           this.toggleInventory()
+        } else if (this.furnaceOpen) {
+          this.closeFurnace()
         } else if (this.active && !this.locked) {
           this.active = false
           this.miningHeld = false
@@ -165,7 +210,7 @@ export default class MinecraftEngine {
         return
       }
       // 대체 모드: 드래그로 시점 회전
-      if (!this.active || !this.dragging) return
+      if (!this.active || this.isUiOpen() || !this.dragging) return
       const dx = e.clientX - this.lastX
       const dy = e.clientY - this.lastY
       this.lastX = e.clientX
@@ -177,7 +222,7 @@ export default class MinecraftEngine {
     }
 
     this.handleMouseDown = (e) => {
-      if (!this.active || this.inventoryOpen) return
+      if (!this.active || this.isUiOpen()) return
       if (this.locked) {
         this.dragButton = e.button
         if (e.button === 0) {
@@ -185,7 +230,7 @@ export default class MinecraftEngine {
           this.miningProgress = 0
           this.miningTarget = null
         } else if (e.button === 2) {
-          this.placeBlock()
+          this.useHeld()
         }
         return
       }
@@ -213,10 +258,10 @@ export default class MinecraftEngine {
       this.miningHeld = false
       this.miningProgress = 0
       this.miningTarget = null
-      if (!this.active || this.locked || this.inventoryOpen) return
+      if (!this.active || this.locked || this.isUiOpen()) return
       if (!wasDragging) return
-      // 대체 모드: 거의 안 움직인 우클릭만 설치
-      if (wasClick && button === 2) this.placeBlock()
+      // 대체 모드: 거의 안 움직인 우클릭만 사용/설치
+      if (wasClick && button === 2) this.useHeld()
     }
 
     // 창 밖으로 나가면 채굴/드래그 상태를 확실히 해제
@@ -235,7 +280,7 @@ export default class MinecraftEngine {
       if (locked) {
         this.hasLocked = true
         this.active = true
-      } else if (wasLocked && !this.lockBlocked) {
+      } else if (wasLocked && !this.lockBlocked && !this.isUiOpen()) {
         // 실제로 잠금 상태였다가 풀린 경우에만 일시정지 (Esc 등)
         this.active = false
         this.miningHeld = false
@@ -301,22 +346,53 @@ export default class MinecraftEngine {
       fallback: this.active && !this.locked,
       lockBlocked: this.lockBlocked,
       inventoryOpen: this.inventoryOpen,
+      furnaceOpen: this.furnaceOpen,
     })
   }
 
-  toggleInventory() {
-    if (!this.active) return
-    this.inventoryOpen = !this.inventoryOpen
+  isUiOpen() {
+    return this.inventoryOpen || this.furnaceOpen
+  }
+
+  enterUi() {
+    this.lockBeforeUI = this.locked
+    if (this.locked) document.exitPointerLock()
     this.miningHeld = false
     this.miningProgress = 0
     this.miningTarget = null
     this.keys.clear()
+  }
+
+  exitUi() {
+    if (this.lockBeforeUI && !this.lockBlocked && this.active) this.requestLock()
+    this.lockBeforeUI = false
+  }
+
+  toggleInventory() {
+    if (!this.active) return
     if (this.inventoryOpen) {
-      this.wasLocked = this.locked
-      if (this.locked) document.exitPointerLock()
-    } else if (this.wasLocked && !this.lockBlocked) {
-      this.requestLock()
+      this.inventoryOpen = false
+      this.exitUi()
+    } else {
+      this.inventoryOpen = true
+      this.furnaceOpen = false
+      this.enterUi()
     }
+    this.notify()
+  }
+
+  openFurnace() {
+    if (!this.active || this.furnaceOpen) return
+    this.inventoryOpen = false
+    this.furnaceOpen = true
+    this.enterUi()
+    this.notify()
+  }
+
+  closeFurnace() {
+    if (!this.furnaceOpen) return
+    this.furnaceOpen = false
+    this.exitUi()
     this.notify()
   }
 
@@ -425,6 +501,60 @@ export default class MinecraftEngine {
     this.emitInventory()
   }
 
+  // 인벤토리 칸 클릭: 갑옷이면 장착, 핫바면 선택, 아니면 핫바와 교환
+  clickSlot(index) {
+    const slot = this.slots[index]
+    const def = slot ? ITEMS[slot.id] : null
+    if (def && def.armor) {
+      this.equipArmor(index)
+      return
+    }
+    if (index < HOTBAR_SIZE) this.setHotbarIndex(index)
+    else this.swapWithHotbar(index)
+  }
+
+  // ------------------------------------------------------------------ 갑옷
+
+  armorPoints() {
+    let points = 0
+    for (const part of ARMOR_PARTS) {
+      const a = this.armor[part]
+      if (a) points += ITEMS[a.id]?.armorPoints || 0
+    }
+    return points
+  }
+
+  equipArmor(index) {
+    const slot = this.slots[index]
+    if (!slot) return
+    const def = ITEMS[slot.id]
+    if (!def || !def.armor) return
+    const part = def.armor
+    const prev = this.armor[part]
+    this.armor[part] = { id: slot.id, count: 1 }
+    this.slots[index] = prev ? { id: prev.id, count: 1 } : null
+    this.showToast(`🛡️ ${def.name} 장착`)
+    this.emitInventory()
+    this.emitVitals(true)
+  }
+
+  unequipArmor(part) {
+    const cur = this.armor[part]
+    if (!cur) return
+    const def = ITEMS[cur.id]
+    this.armor[part] = null
+    const added = this.addItem(cur.id, 1)
+    if (added === 0) {
+      this.armor[part] = cur
+      this.showToast('인벤토리가 가득 찼습니다', true)
+      return
+    }
+    this.showToast(`🛡️ ${def.name} 해제`)
+    this.emitVitals(true)
+  }
+
+  // ------------------------------------------------------------------ 제작/조리
+
   craft(recipeId) {
     const recipe = RECIPES.find((r) => r.id === recipeId)
     if (!recipe) return false
@@ -440,10 +570,315 @@ export default class MinecraftEngine {
     return added > 0
   }
 
+  cook(recipeId) {
+    const recipe = COOK_RECIPES.find((r) => r.id === recipeId)
+    if (!recipe) return false
+    if (this.countItem(recipe.input) < 1) {
+      this.showToast('재료가 부족합니다', true)
+      return false
+    }
+    if (this.countItem(recipe.fuel) < recipe.fuelCount) {
+      this.showToast('연료(석탄)가 부족합니다', true)
+      return false
+    }
+    this.removeItems(recipe.input, 1)
+    this.removeItems(recipe.fuel, recipe.fuelCount)
+    const added = this.addItem(recipe.output, 1)
+    if (added > 0) this.showToast(`🔥 ${ITEMS[recipe.output].name} x${added} 조리`)
+    return added > 0
+  }
+
+  // ------------------------------------------------------------------ 생명력/허기
+
+  emitVitals(force = false) {
+    const rh = Math.round(this.health)
+    const ru = Math.round(this.hunger)
+    const ra = this.armorPoints()
+    if (!force && rh === this.lastVitals.health && ru === this.lastVitals.hunger && ra === this.lastVitals.armor) {
+      return
+    }
+    this.lastVitals = { health: rh, hunger: ru, armor: ra }
+    this.onVitals({
+      health: this.health,
+      hunger: this.hunger,
+      armor: ra,
+      maxHealth: MAX_HEALTH,
+      maxHunger: MAX_HUNGER,
+    })
+  }
+
+  applyDamage(amount, text) {
+    if (amount <= 0) return
+    const points = Math.min(20, this.armorPoints())
+    const reduced = amount * (1 - points / 25)
+    this.health = Math.max(0, this.health - reduced)
+    this.emitVitals(true)
+    if (text) this.showToast(`💔 ${text}`, true)
+    if (this.health <= 0) this.die()
+  }
+
+  die() {
+    const sx = Math.floor(WORLD_X / 2)
+    const sz = Math.floor(WORLD_Z / 2)
+    const sy = this.world.surfaceHeight(sx, sz)
+    this.pos.set(sx + 0.5, sy + EPS, sz + 0.5)
+    this.vel.set(0, 0, 0)
+    this.health = MAX_HEALTH
+    this.hunger = MAX_HUNGER
+    this.maxFallY = this.pos.y
+    this.wasAirborne = false
+    this.regenTimer = 0
+    this.starveTimer = 0
+    this.showToast('💀 쓰러졌습니다. 다시 일어납니다.', true)
+    this.emitVitals(true)
+    this.applyCamera()
+  }
+
+  updateVitals(dt, moving, sprinting) {
+    let drain = 0.012
+    if (moving) drain += sprinting ? 0.09 : 0.03
+    this.hunger = Math.max(0, this.hunger - drain * dt)
+
+    if (this.hunger >= 18 && this.health < MAX_HEALTH) {
+      this.regenTimer += dt
+      if (this.regenTimer >= 4) {
+        this.regenTimer = 0
+        this.health = Math.min(MAX_HEALTH, this.health + 1)
+        this.hunger = Math.max(0, this.hunger - 0.5)
+      }
+    } else {
+      this.regenTimer = 0
+    }
+
+    if (this.hunger <= 0) {
+      this.starveTimer += dt
+      if (this.starveTimer >= 4) {
+        this.starveTimer = 0
+        this.applyDamage(1, '굶주림')
+      }
+    } else {
+      this.starveTimer = 0
+    }
+
+    this.emitVitals()
+  }
+
+  // ------------------------------------------------------------------ 사용/설치
+
+  useHeld() {
+    if (!this.active || this.isUiOpen()) return
+    // 화로를 바라보면 화로 UI 열기
+    if (this.hit) {
+      const bid = this.world.get(this.hit.x, this.hit.y, this.hit.z)
+      if (bid === ITEM.FURNACE) {
+        this.openFurnace()
+        return
+      }
+    }
+    const held = this.getSelectedItem()
+    if (!held) return
+    const def = ITEMS[held.id]
+    if (!def) return
+    if (def.food) {
+      this.eat()
+      return
+    }
+    if (def.block) this.placeBlock()
+  }
+
+  eat() {
+    const held = this.getSelectedItem()
+    const def = held ? ITEMS[held.id] : null
+    if (!def || !def.food) return false
+    if (this.hunger >= MAX_HUNGER) {
+      this.showToast('허기가 이미 가득 찼습니다', true)
+      return false
+    }
+    this.removeItems(held.id, 1)
+    this.hunger = Math.min(MAX_HUNGER, this.hunger + def.food.hunger)
+    this.showToast(`🍖 ${def.name} 섭취 (허기 +${def.food.hunger})`)
+    this.emitVitals(true)
+    return true
+  }
+
+  placeBlock() {
+    if (!this.hit) return
+    const held = this.getSelectedItem()
+    if (!held) return
+    const def = ITEMS[held.id]
+    if (!def || !def.block) return
+
+    const nx = this.hit.x + this.hit.nx
+    const ny = this.hit.y + this.hit.ny
+    const nz = this.hit.z + this.hit.nz
+    if (!this.world.inBounds(nx, ny, nz)) return
+    if (this.world.get(nx, ny, nz) !== 0) return
+    if (this.blockIntersectsPlayer(nx, ny, nz)) return
+
+    this.world.set(nx, ny, nz, held.id)
+    this.updateChunkFor(nx, nz)
+    this.removeItems(held.id, 1)
+  }
+
+  blockIntersectsPlayer(bx, by, bz) {
+    return (
+      this.pos.x + HALF_W > bx &&
+      this.pos.x - HALF_W < bx + 1 &&
+      this.pos.y + HEIGHT > by &&
+      this.pos.y < by + 1 &&
+      this.pos.z + HALF_W > bz &&
+      this.pos.z - HALF_W < bz + 1
+    )
+  }
+
+  // ------------------------------------------------------------------ 동물
+
+  groundHeight(x, z) {
+    for (let y = WORLD_Y - 1; y >= 0; y -= 1) {
+      const id = this.world.get(x, y, z)
+      if (id === 0 || id === ITEM.LEAVES || id === ITEM.LOG) continue
+      return y + 1
+    }
+    return 1
+  }
+
+  spawnMob(initial = false) {
+    if (this.mobs.length >= MOB_MAX) return
+    const type = Math.random() < 0.5 ? 'cow' : 'pig'
+    const def = MOB_TYPES[type]
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const ang = Math.random() * Math.PI * 2
+      const r = initial ? 6 + Math.random() * 18 : 10 + Math.random() * 20
+      const x = Math.round(this.pos.x + Math.cos(ang) * r)
+      const z = Math.round(this.pos.z + Math.sin(ang) * r)
+      if (x < 2 || x >= WORLD_X - 2 || z < 2 || z >= WORLD_Z - 2) continue
+      const y = this.groundHeight(x, z)
+      if (y >= WORLD_Y - 3) continue
+      const foot = this.world.get(x, y, z)
+      const head = this.world.get(x, y + 1, z)
+      if ((foot !== 0 && foot !== ITEM.LEAVES) || (head !== 0 && head !== ITEM.LEAVES)) continue
+
+      const obj = createMobObject(type)
+      const pos = new THREE.Vector3(x + 0.5, y, z + 0.5)
+      obj.position.copy(pos)
+      const mob = {
+        type,
+        def,
+        obj,
+        pos,
+        yaw: Math.random() * Math.PI * 2,
+        targetYaw: Math.random() * Math.PI * 2,
+        wanderTimer: Math.random() * 2,
+        moving: true,
+        health: def.health,
+        hurtTimer: 0,
+      }
+      obj.userData.mobRef = mob
+      obj.rotation.y = mob.yaw
+      this.mobGroup.add(obj)
+      this.mobs.push(mob)
+      return
+    }
+  }
+
+  updateMobs(dt) {
+    for (const mob of this.mobs) {
+      mob.wanderTimer -= dt
+      if (mob.wanderTimer <= 0) {
+        mob.wanderTimer = 1.5 + Math.random() * 3
+        mob.targetYaw = Math.random() * Math.PI * 2
+        mob.moving = Math.random() > 0.25
+      }
+      if (mob.hurtTimer > 0) mob.hurtTimer -= dt
+
+      if (mob.moving) {
+        let diff = mob.targetYaw - mob.yaw
+        diff = ((diff + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI
+        mob.yaw += Math.max(-2.5 * dt, Math.min(2.5 * dt, diff))
+        const dx = -Math.sin(mob.yaw)
+        const dz = -Math.cos(mob.yaw)
+        const nx = mob.pos.x + dx * mob.def.speed * dt
+        const nz = mob.pos.z + dz * mob.def.speed * dt
+        if (nx > 1.5 && nx < WORLD_X - 1.5 && nz > 1.5 && nz < WORLD_Z - 1.5) {
+          const cur = this.groundHeight(Math.floor(mob.pos.x), Math.floor(mob.pos.z))
+          const next = this.groundHeight(Math.floor(nx), Math.floor(nz))
+          if (Math.abs(next - cur) <= 1) {
+            mob.pos.x = nx
+            mob.pos.z = nz
+          } else {
+            mob.wanderTimer = 0
+          }
+        } else {
+          mob.wanderTimer = 0
+        }
+      }
+
+      const gy = this.groundHeight(Math.floor(mob.pos.x), Math.floor(mob.pos.z))
+      mob.pos.y = gy
+      mob.obj.position.copy(mob.pos)
+      mob.obj.rotation.y = mob.yaw
+      // 피격 시 깜빡임
+      mob.obj.visible = !(mob.hurtTimer > 0 && Math.floor(mob.hurtTimer * 20) % 2 === 0)
+    }
+  }
+
+  tryAttack() {
+    if (!this.mobGroup.children.length) return false
+    this.raycaster.setFromCamera(this.ndc, this.camera)
+    const hits = this.raycaster.intersectObjects(this.mobGroup.children, true)
+    if (!hits.length) return false
+    const first = hits[0]
+    if (first.distance > REACH) return false
+    // 블록에 가려져 있으면 무시
+    if (this.hit) {
+      const bx = this.hit.x + 0.5
+      const by = this.hit.y + 0.5
+      const bz = this.hit.z + 0.5
+      const blockDist = this.raycaster.ray.origin.distanceTo(new THREE.Vector3(bx, by, bz)) - 0.9
+      if (first.distance > blockDist) return false
+    }
+    let node = first.object
+    while (node && !node.userData.mobRef) node = node.parent
+    const mob = node ? node.userData.mobRef : null
+    if (!mob) return false
+    this.damageMob(mob)
+    return true
+  }
+
+  damageMob(mob) {
+    const held = this.getSelectedItem()
+    const heldDef = held ? ITEMS[held.id] : null
+    const dmg = heldDef && heldDef.kind ? 3 : 2
+    mob.health -= dmg
+    mob.hurtTimer = 0.3
+    if (mob.health <= 0) this.killMob(mob)
+  }
+
+  killMob(mob) {
+    const parts = []
+    for (const d of mob.def.drops) {
+      const n = d.min + Math.floor(Math.random() * (d.max - d.min + 1))
+      if (n <= 0) continue
+      this.addItem(d.id, n)
+      parts.push(`${ITEMS[d.id].name} x${n}`)
+    }
+    this.mobGroup.remove(mob.obj)
+    const i = this.mobs.indexOf(mob)
+    if (i >= 0) this.mobs.splice(i, 1)
+    this.showToast(`🐄 ${mob.def.name} 처치 · ${parts.join(', ')}`)
+  }
+
   snapshot() {
     return {
       slots: this.slots.map((s) => (s ? { id: s.id, count: s.count } : null)),
       hotbarIndex: this.hotbarIndex,
+      armor: {
+        helmet: this.armor.helmet ? { ...this.armor.helmet } : null,
+        chest: this.armor.chest ? { ...this.armor.chest } : null,
+        legs: this.armor.legs ? { ...this.armor.legs } : null,
+        boots: this.armor.boots ? { ...this.armor.boots } : null,
+      },
+      armorPoints: this.armorPoints(),
     }
   }
 
@@ -530,7 +965,7 @@ export default class MinecraftEngine {
 
   update(dt) {
     this.toastCooldown = Math.max(0, this.toastCooldown - dt)
-    if (!this.active || this.inventoryOpen) {
+    if (!this.active || this.isUiOpen()) {
       this.emitMining(0)
       return
     }
@@ -546,6 +981,7 @@ export default class MinecraftEngine {
 
     const sprinting = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')
     const space = this.keys.has('Space')
+    const moving = wish.lengthSq() > 0
 
     if (this.fly) {
       const speed = FLY_SPEED
@@ -563,6 +999,7 @@ export default class MinecraftEngine {
       if (space && this.onGround) {
         this.vel.y = JUMP_SPEED
         this.onGround = false
+        this.hunger = Math.max(0, this.hunger - 0.15)
       }
     }
 
@@ -573,9 +1010,40 @@ export default class MinecraftEngine {
 
     this.pos.y = Math.max(0, Math.min(WORLD_Y - HEIGHT, this.pos.y))
 
+    this.updateFallDamage()
+
+    this.attackCooldown = Math.max(0, this.attackCooldown - dt)
+    this.updateVitals(dt, moving, sprinting)
+    this.updateMobs(dt)
+
+    this.mobTimer -= dt
+    if (this.mobTimer <= 0) {
+      this.mobTimer = MOB_SPAWN_INTERVAL
+      this.spawnMob()
+    }
+
     this.applyCamera()
     this.updateHighlight()
     this.updateMining(dt)
+  }
+
+  updateFallDamage() {
+    if (this.fly) {
+      this.maxFallY = this.pos.y
+      this.wasAirborne = false
+      return
+    }
+    if (this.onGround) {
+      if (this.wasAirborne) {
+        const dist = this.maxFallY - this.pos.y
+        if (dist > 3) this.applyDamage(Math.floor(dist - 3), '낙하 데미지')
+      }
+      this.maxFallY = this.pos.y
+      this.wasAirborne = false
+    } else {
+      this.maxFallY = Math.max(this.maxFallY, this.pos.y)
+      this.wasAirborne = true
+    }
   }
 
   tryMove(axis, amount) {
@@ -683,7 +1151,24 @@ export default class MinecraftEngine {
   // ---------------------------------------------------------- 채굴 (시간 기반)
 
   updateMining(dt) {
-    if (!this.miningHeld || !this.hit) {
+    if (!this.miningHeld) {
+      this.miningTarget = null
+      this.miningProgress = 0
+      this.emitMining(0)
+      return
+    }
+
+    // 1) 사거리 안에 동물이 있으면 공격 우선
+    if (this.attackCooldown <= 0 && this.tryAttack()) {
+      this.attackCooldown = ATTACK_COOLDOWN
+      this.miningTarget = null
+      this.miningProgress = 0
+      this.emitMining(0)
+      return
+    }
+
+    // 2) 블록 채굴
+    if (!this.hit) {
       this.miningTarget = null
       this.miningProgress = 0
       this.emitMining(0)
@@ -741,6 +1226,7 @@ export default class MinecraftEngine {
 
     this.world.set(x, y, z, 0)
     this.updateChunkFor(x, z)
+    this.hunger = Math.max(0, this.hunger - 0.1)
 
     if (props.drops) {
       const added = this.addItem(props.drops, 1)
@@ -749,36 +1235,6 @@ export default class MinecraftEngine {
         this.showToast(`+${added} ${def.name}`)
       }
     }
-  }
-
-  placeBlock() {
-    if (!this.hit) return
-    const held = this.getSelectedItem()
-    if (!held) return
-    const def = ITEMS[held.id]
-    if (!def || !def.block) return
-
-    const nx = this.hit.x + this.hit.nx
-    const ny = this.hit.y + this.hit.ny
-    const nz = this.hit.z + this.hit.nz
-    if (!this.world.inBounds(nx, ny, nz)) return
-    if (this.world.get(nx, ny, nz) !== 0) return
-    if (this.blockIntersectsPlayer(nx, ny, nz)) return
-
-    this.world.set(nx, ny, nz, held.id)
-    this.updateChunkFor(nx, nz)
-    this.removeItems(held.id, 1)
-  }
-
-  blockIntersectsPlayer(bx, by, bz) {
-    return (
-      this.pos.x + HALF_W > bx &&
-      this.pos.x - HALF_W < bx + 1 &&
-      this.pos.y + HEIGHT > by &&
-      this.pos.y < by + 1 &&
-      this.pos.z + HALF_W > bz &&
-      this.pos.z - HALF_W < bz + 1
-    )
   }
 
   // 디버그/테스트용
@@ -791,10 +1247,16 @@ export default class MinecraftEngine {
       locked: this.locked,
       lockBlocked: this.lockBlocked,
       inventoryOpen: this.inventoryOpen,
+      furnaceOpen: this.furnaceOpen,
       hotbarIndex: this.hotbarIndex,
       held: this.getSelectedItem(),
       hit: this.hit,
       slots: this.snapshot().slots,
+      armor: this.snapshot().armor,
+      armorPoints: this.armorPoints(),
+      health: this.health,
+      hunger: this.hunger,
+      mobCount: this.mobs.length,
       blocks: this.world.data.length,
     }
   }

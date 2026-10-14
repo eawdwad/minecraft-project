@@ -1,11 +1,11 @@
 import * as THREE from 'three'
 
-// 16x16 픽셀 텍스처 아틀라스 (8열 x 5행 = 40칸)
+// 16x16 픽셀 텍스처 아틀라스 (8열 x 10행 = 80칸)
 // 외부 이미지 없이 코드로 픽셀아트를 생성한다.
 
 export const TILE_SIZE = 16
 export const ATLAS_COLS = 8
-export const ATLAS_ROWS = 5
+export const ATLAS_ROWS = 10
 
 export const TILE = {
   GRASS_TOP: 0,
@@ -42,6 +42,25 @@ export const TILE = {
   SHOVEL_STONE: 31,
   SHOVEL_IRON: 32,
   SHOVEL_DIAMOND: 33,
+  FURNACE_FRONT: 34,
+  FURNACE_TOP: 35,
+  LEATHER: 36,
+  BEEF_RAW: 37,
+  BEEF_COOKED: 38,
+  PORK_RAW: 39,
+  PORK_COOKED: 40,
+  HELMET_LEATHER: 41,
+  HELMET_IRON: 42,
+  HELMET_DIAMOND: 43,
+  CHEST_LEATHER: 44,
+  CHEST_IRON: 45,
+  CHEST_DIAMOND: 46,
+  LEGS_LEATHER: 47,
+  LEGS_IRON: 48,
+  LEGS_DIAMOND: 49,
+  BOOTS_LEATHER: 50,
+  BOOTS_IRON: 51,
+  BOOTS_DIAMOND: 52,
 }
 
 function makeRng(seed) {
@@ -77,6 +96,10 @@ function rect(ctx, x0, y0, x, y, w, h, color) {
   ctx.fillRect(x0 + x, y0 + y, w, h)
 }
 
+const pixels = (ctx, x0, y0, list, color) => {
+  for (const [x, y] of list) pixel(ctx, x0, y0, x, y, color)
+}
+
 // ------------------------------------------------------------- 블록 타일
 
 function paintOre(ctx, x0, y0, oreColor, seed) {
@@ -89,21 +112,15 @@ function paintOre(ctx, x0, y0, oreColor, seed) {
     [11, 11],
     [8, 7],
   ]
-  for (const [sx, sy] of spots) {
-    rect(ctx, x0, y0, sx, sy, 2, 2, oreColor)
-  }
-  for (let i = 0; i < 8; i += 1) {
-    pixel(ctx, x0, y0, Math.floor(rng() * 16), Math.floor(rng() * 16), oreColor)
-  }
+  for (const [sx, sy] of spots) rect(ctx, x0, y0, sx, sy, 2, 2, oreColor)
+  for (let i = 0; i < 8; i += 1) pixel(ctx, x0, y0, Math.floor(rng() * 16), Math.floor(rng() * 16), oreColor)
 }
 
 function paintBedrock(ctx, x0, y0) {
   paintNoise(ctx, x0, y0, 0x4a4a4a, 46, 60)
   const rng = makeRng(61)
   for (let i = 0; i < 12; i += 1) {
-    const x = Math.floor(rng() * 14)
-    const y = Math.floor(rng() * 14)
-    rect(ctx, x0, y0, x, y, 2, 2, i % 2 === 0 ? '#2f2f2f' : '#636363')
+    rect(ctx, x0, y0, Math.floor(rng() * 14), Math.floor(rng() * 14), 2, 2, i % 2 === 0 ? '#2f2f2f' : '#636363')
   }
 }
 
@@ -118,12 +135,27 @@ function paintGrassTop(ctx, x0, y0) {
 function paintGrassSide(ctx, x0, y0) {
   paintNoise(ctx, x0, y0, 0x8b5a2b, 30, 12)
   for (let x = 0; x < TILE_SIZE; x += 1) {
-    const rng = makeRng(500 + x)
-    const depth = 3 + Math.floor(rng() * 3)
-    for (let y = 0; y < depth; y += 1) {
-      pixel(ctx, x0, y0, x, y, y === 0 ? '#7ec850' : '#6ab04c')
-    }
+    const depth = 3 + Math.floor(makeRng(500 + x)() * 3)
+    for (let y = 0; y < depth; y += 1) pixel(ctx, x0, y0, x, y, y === 0 ? '#7ec850' : '#6ab04c')
   }
+}
+
+function paintFurnaceFront(ctx, x0, y0) {
+  paintNoise(ctx, x0, y0, 0x7d7d7d, 20, 70)
+  rect(ctx, x0, y0, 0, 0, 16, 2, '#6a6a6a')
+  rect(ctx, x0, y0, 0, 14, 16, 2, '#636363')
+  rect(ctx, x0, y0, 3, 5, 10, 8, '#2b2b2b')
+  rect(ctx, x0, y0, 4, 6, 8, 6, '#141414')
+  for (let x = 5; x <= 11; x += 3) rect(ctx, x0, y0, x, 6, 1, 6, '#5a5a5a')
+  pixel(ctx, x0, y0, 6, 10, '#e0803a')
+  pixel(ctx, x0, y0, 7, 10, '#f2a445')
+  pixel(ctx, x0, y0, 8, 10, '#e0803a')
+}
+
+function paintFurnaceTop(ctx, x0, y0) {
+  paintNoise(ctx, x0, y0, 0x8a8a8a, 20, 71)
+  rect(ctx, x0, y0, 6, 6, 4, 4, '#5a5a5a')
+  rect(ctx, x0, y0, 7, 7, 2, 2, '#3f3f3f')
 }
 
 // ------------------------------------------------------------- 아이템 아이콘
@@ -148,20 +180,10 @@ function drawPickaxe(ctx, x0, y0, head) {
 function drawAxe(ctx, x0, y0, head) {
   drawHandle(ctx, x0, y0)
   const blade = [
-    [8, 3],
-    [9, 3],
-    [10, 4],
-    [11, 5],
-    [11, 6],
-    [11, 7],
-    [10, 8],
-    [9, 8],
-    [8, 7],
-    [8, 6],
-    [8, 5],
-    [8, 4],
+    [8, 3], [9, 3], [10, 4], [11, 5], [11, 6], [11, 7],
+    [10, 8], [9, 8], [8, 7], [8, 6], [8, 5], [8, 4],
   ]
-  for (const [x, y] of blade) pixel(ctx, x0, y0, x, y, head)
+  pixels(ctx, x0, y0, blade, head)
   pixel(ctx, x0, y0, 9, 4, '#ffffff')
   pixel(ctx, x0, y0, 10, 5, '#ffffff')
 }
@@ -170,8 +192,7 @@ function drawShovel(ctx, x0, y0, head) {
   drawHandle(ctx, x0, y0)
   for (let y = 3; y <= 7; y += 1) {
     for (let x = 8; x <= 11; x += 1) {
-      const corner = (x === 8 || x === 11) && (y === 3 || y === 7)
-      if (corner) continue
+      if ((x === 8 || x === 11) && (y === 3 || y === 7)) continue
       pixel(ctx, x0, y0, x, y, head)
     }
   }
@@ -194,27 +215,30 @@ function paintStick(ctx, x0, y0) {
 
 function paintIngot(ctx, x0, y0, color, light, dark) {
   const rows = [
-    [7, 4, 6, 9],
-    [8, 5, 5, 10],
-    [9, 6, 4, 11],
+    [7, 6, 9],
+    [8, 5, 10],
+    [9, 4, 11],
   ]
-  for (const [y, , xStart, xEnd] of rows) {
-    for (let x = xStart; x <= xEnd; x += 1) pixel(ctx, x0, y0, x, y, color)
-  }
+  for (const [y, a, b] of rows) for (let x = a; x <= b; x += 1) pixel(ctx, x0, y0, x, y, color)
   for (let x = 6; x <= 9; x += 1) pixel(ctx, x0, y0, x, 6, light)
   for (let x = 4; x <= 11; x += 1) pixel(ctx, x0, y0, x, 10, dark)
 }
 
 function paintCoal(ctx, x0, y0) {
-  const blob = [
-    [6, 5], [7, 5], [8, 5], [9, 5],
-    [5, 6], [6, 6], [7, 6], [8, 6], [9, 6], [10, 6],
-    [5, 7], [6, 7], [7, 7], [8, 7], [9, 7], [10, 7],
-    [5, 8], [6, 8], [7, 8], [8, 8], [9, 8], [10, 8],
-    [6, 9], [7, 9], [8, 9], [9, 9],
-    [7, 10], [8, 10],
-  ]
-  for (const [x, y] of blob) pixel(ctx, x0, y0, x, y, '#2f2f2f')
+  pixels(
+    ctx,
+    x0,
+    y0,
+    [
+      [6, 5], [7, 5], [8, 5], [9, 5],
+      [5, 6], [6, 6], [7, 6], [8, 6], [9, 6], [10, 6],
+      [5, 7], [6, 7], [7, 7], [8, 7], [9, 7], [10, 7],
+      [5, 8], [6, 8], [7, 8], [8, 8], [9, 8], [10, 8],
+      [6, 9], [7, 9], [8, 9], [9, 9],
+      [7, 10], [8, 10],
+    ],
+    '#2f2f2f',
+  )
   pixel(ctx, x0, y0, 6, 6, '#5a5a5a')
   pixel(ctx, x0, y0, 7, 6, '#5a5a5a')
   pixel(ctx, x0, y0, 6, 7, '#4a4a4a')
@@ -229,12 +253,98 @@ function paintDiamond(ctx, x0, y0) {
     [8, 6, 9],
     [9, 7, 8],
   ]
-  for (const [y, a, b] of rows) {
-    for (let x = a; x <= b; x += 1) pixel(ctx, x0, y0, x, y, '#3fb8e0')
-  }
+  for (const [y, a, b] of rows) for (let x = a; x <= b; x += 1) pixel(ctx, x0, y0, x, y, '#3fb8e0')
   pixel(ctx, x0, y0, 7, 5, '#9df0ff')
   pixel(ctx, x0, y0, 7, 6, '#9df0ff')
   pixel(ctx, x0, y0, 8, 6, '#9df0ff')
+}
+
+function paintLeather(ctx, x0, y0) {
+  const main = '#a9763c'
+  const light = '#c69356'
+  const dark = '#7a5228'
+  for (let y = 4; y <= 11; y += 1) {
+    const a = y === 4 || y === 11 ? 5 : 4
+    const b = y === 4 || y === 11 ? 10 : 11
+    for (let x = a; x <= b; x += 1) pixel(ctx, x0, y0, x, y, main)
+  }
+  pixel(ctx, x0, y0, 5, 5, light)
+  pixel(ctx, x0, y0, 6, 5, light)
+  pixel(ctx, x0, y0, 8, 4, light)
+  pixel(ctx, x0, y0, 4, 9, dark)
+  pixel(ctx, x0, y0, 11, 9, dark)
+  pixel(ctx, x0, y0, 7, 11, dark)
+  pixel(ctx, x0, y0, 8, 11, dark)
+}
+
+function paintMeat(ctx, x0, y0, main, light, dark) {
+  const blob = [
+    [6, 5], [7, 5], [8, 5], [9, 5],
+    [5, 6], [6, 6], [7, 6], [8, 6], [9, 6], [10, 6],
+    [4, 7], [5, 7], [6, 7], [7, 7], [8, 7], [9, 7], [10, 7], [11, 7],
+    [4, 8], [5, 8], [6, 8], [7, 8], [8, 8], [9, 8], [10, 8], [11, 8],
+    [5, 9], [6, 9], [7, 9], [8, 9], [9, 9], [10, 9],
+    [6, 10], [7, 10], [8, 10], [9, 10],
+    [7, 11], [8, 11],
+  ]
+  pixels(ctx, x0, y0, blob, main)
+  pixel(ctx, x0, y0, 5, 6, light)
+  pixel(ctx, x0, y0, 6, 6, light)
+  pixel(ctx, x0, y0, 6, 7, light)
+  pixel(ctx, x0, y0, 5, 9, dark)
+  pixel(ctx, x0, y0, 6, 10, dark)
+  pixel(ctx, x0, y0, 9, 10, dark)
+  pixel(ctx, x0, y0, 10, 9, dark)
+}
+
+const ARMOR_COLORS = {
+  leather: ['#8a5a2b', '#a9763c', '#6b431f'],
+  iron: ['#cfcfcf', '#efefef', '#9a9a9a'],
+  diamond: ['#57e6d8', '#9df0ff', '#2f9c8f'],
+}
+
+function paintHelmet(ctx, x0, y0, [main, light, dark]) {
+  for (let y = 4; y <= 8; y += 1) {
+    const a = y === 4 ? 5 : 4
+    const b = y === 4 ? 10 : 11
+    for (let x = a; x <= b; x += 1) pixel(ctx, x0, y0, x, y, main)
+  }
+  for (let y = 9; y <= 10; y += 1) for (const x of [4, 5, 10, 11]) pixel(ctx, x0, y0, x, y, main)
+  pixel(ctx, x0, y0, 5, 5, light)
+  pixel(ctx, x0, y0, 6, 5, light)
+  pixel(ctx, x0, y0, 4, 8, dark)
+  pixel(ctx, x0, y0, 11, 8, dark)
+}
+
+function paintChest(ctx, x0, y0, [main, light, dark]) {
+  for (let y = 4; y <= 12; y += 1) {
+    for (let x = 4; x <= 11; x += 1) {
+      if (y === 4 && (x === 7 || x === 8)) continue
+      pixel(ctx, x0, y0, x, y, main)
+    }
+  }
+  pixel(ctx, x0, y0, 5, 5, light)
+  pixel(ctx, x0, y0, 6, 5, light)
+  pixel(ctx, x0, y0, 5, 6, light)
+  for (let x = 4; x <= 11; x += 1) pixel(ctx, x0, y0, x, 12, dark)
+}
+
+function paintLegs(ctx, x0, y0, [main, light, dark]) {
+  for (let y = 4; y <= 7; y += 1) for (let x = 4; x <= 11; x += 1) pixel(ctx, x0, y0, x, y, main)
+  for (let y = 8; y <= 13; y += 1) {
+    for (const x of [4, 5, 6, 9, 10, 11]) pixel(ctx, x0, y0, x, y, main)
+  }
+  pixel(ctx, x0, y0, 5, 5, light)
+  pixel(ctx, x0, y0, 10, 5, light)
+  for (const x of [4, 5, 6, 9, 10, 11]) pixel(ctx, x0, y0, x, 13, dark)
+}
+
+function paintBoots(ctx, x0, y0, [main, light, dark]) {
+  for (let y = 8; y <= 9; y += 1) for (const x of [4, 5, 6, 9, 10, 11]) pixel(ctx, x0, y0, x, y, main)
+  for (let y = 10; y <= 11; y += 1) for (const x of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) pixel(ctx, x0, y0, x, y, main)
+  pixel(ctx, x0, y0, 4, 8, light)
+  pixel(ctx, x0, y0, 9, 8, light)
+  for (const x of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) pixel(ctx, x0, y0, x, 11, dark)
 }
 
 // ------------------------------------------------------------- 타일 그리기
@@ -243,15 +353,9 @@ function paintTile(ctx, index, x0, y0) {
   switch (index) {
     case TILE.GRASS_TOP: paintGrassTop(ctx, x0, y0); break
     case TILE.GRASS_SIDE: paintGrassSide(ctx, x0, y0); break
-    case TILE.DIRT:
-      paintNoise(ctx, x0, y0, 0x8b5a2b, 30, 13)
-      break
-    case TILE.STONE:
-      paintNoise(ctx, x0, y0, 0x9a9a9a, 26, 14)
-      break
-    case TILE.SAND:
-      paintNoise(ctx, x0, y0, 0xe6d5a3, 20, 15)
-      break
+    case TILE.DIRT: paintNoise(ctx, x0, y0, 0x8b5a2b, 30, 13); break
+    case TILE.STONE: paintNoise(ctx, x0, y0, 0x9a9a9a, 26, 14); break
+    case TILE.SAND: paintNoise(ctx, x0, y0, 0xe6d5a3, 20, 15); break
     case TILE.LOG_TOP: {
       paintNoise(ctx, x0, y0, 0xb98a4a, 18, 16)
       ctx.strokeStyle = '#8a6431'
@@ -284,9 +388,7 @@ function paintTile(ctx, index, x0, y0) {
     case TILE.COBBLE: {
       paintNoise(ctx, x0, y0, 0x8a8a8a, 24, 20)
       const rng = makeRng(220)
-      for (let i = 0; i < 8; i += 1) {
-        rect(ctx, x0, y0, Math.floor(rng() * 12), Math.floor(rng() * 12), 3, 2, '#6d6d6d')
-      }
+      for (let i = 0; i < 8; i += 1) rect(ctx, x0, y0, Math.floor(rng() * 12), Math.floor(rng() * 12), 3, 2, '#6d6d6d')
       break
     }
     case TILE.BRICK:
@@ -299,9 +401,7 @@ function paintTile(ctx, index, x0, y0) {
         for (let x = 0; x < TILE_SIZE; x += 8) rect(ctx, x0, y0, x + 3, y, 1, 8, '#d9c7a0')
       }
       break
-    case TILE.WATER:
-      paintNoise(ctx, x0, y0, 0x3d7ad6, 18, 22)
-      break
+    case TILE.WATER: paintNoise(ctx, x0, y0, 0x3d7ad6, 18, 22); break
     case TILE.COAL_ORE: paintOre(ctx, x0, y0, '#2f2f2f', 30); break
     case TILE.IRON_ORE: paintOre(ctx, x0, y0, '#d8a06a', 31); break
     case TILE.GOLD_ORE: paintOre(ctx, x0, y0, '#f2d24b', 32); break
@@ -324,6 +424,25 @@ function paintTile(ctx, index, x0, y0) {
     case TILE.SHOVEL_STONE: drawShovel(ctx, x0, y0, TOOL_HEAD.stone); break
     case TILE.SHOVEL_IRON: drawShovel(ctx, x0, y0, TOOL_HEAD.iron); break
     case TILE.SHOVEL_DIAMOND: drawShovel(ctx, x0, y0, TOOL_HEAD.diamond); break
+    case TILE.FURNACE_FRONT: paintFurnaceFront(ctx, x0, y0); break
+    case TILE.FURNACE_TOP: paintFurnaceTop(ctx, x0, y0); break
+    case TILE.LEATHER: paintLeather(ctx, x0, y0); break
+    case TILE.BEEF_RAW: paintMeat(ctx, x0, y0, '#a63b34', '#c85a52', '#7c2620'); break
+    case TILE.BEEF_COOKED: paintMeat(ctx, x0, y0, '#7a4426', '#a05f36', '#5a2f18'); break
+    case TILE.PORK_RAW: paintMeat(ctx, x0, y0, '#e0898f', '#f0a7ac', '#b5646a'); break
+    case TILE.PORK_COOKED: paintMeat(ctx, x0, y0, '#8a552f', '#ab6f42', '#633a1d'); break
+    case TILE.HELMET_LEATHER: paintHelmet(ctx, x0, y0, ARMOR_COLORS.leather); break
+    case TILE.HELMET_IRON: paintHelmet(ctx, x0, y0, ARMOR_COLORS.iron); break
+    case TILE.HELMET_DIAMOND: paintHelmet(ctx, x0, y0, ARMOR_COLORS.diamond); break
+    case TILE.CHEST_LEATHER: paintChest(ctx, x0, y0, ARMOR_COLORS.leather); break
+    case TILE.CHEST_IRON: paintChest(ctx, x0, y0, ARMOR_COLORS.iron); break
+    case TILE.CHEST_DIAMOND: paintChest(ctx, x0, y0, ARMOR_COLORS.diamond); break
+    case TILE.LEGS_LEATHER: paintLegs(ctx, x0, y0, ARMOR_COLORS.leather); break
+    case TILE.LEGS_IRON: paintLegs(ctx, x0, y0, ARMOR_COLORS.iron); break
+    case TILE.LEGS_DIAMOND: paintLegs(ctx, x0, y0, ARMOR_COLORS.diamond); break
+    case TILE.BOOTS_LEATHER: paintBoots(ctx, x0, y0, ARMOR_COLORS.leather); break
+    case TILE.BOOTS_IRON: paintBoots(ctx, x0, y0, ARMOR_COLORS.iron); break
+    case TILE.BOOTS_DIAMOND: paintBoots(ctx, x0, y0, ARMOR_COLORS.diamond); break
     default: break
   }
 }
@@ -338,9 +457,7 @@ function getAtlasCanvas() {
   const ctx = canvas.getContext('2d')
   const total = ATLAS_COLS * ATLAS_ROWS
   for (let i = 0; i < total; i += 1) {
-    const col = i % ATLAS_COLS
-    const row = Math.floor(i / ATLAS_COLS)
-    paintTile(ctx, i, col * TILE_SIZE, row * TILE_SIZE)
+    paintTile(ctx, i, (i % ATLAS_COLS) * TILE_SIZE, Math.floor(i / ATLAS_COLS) * TILE_SIZE)
   }
   atlasCanvas = canvas
   return canvas
@@ -360,7 +477,7 @@ export function tileUV(index) {
   const row = Math.floor(index / ATLAS_COLS)
   const iw = 1 / ATLAS_COLS
   const ih = 1 / ATLAS_ROWS
-  const inset = 0.0015
+  const inset = 0.0012
   return {
     u0: col * iw + inset,
     u1: (col + 1) * iw - inset,
@@ -398,4 +515,5 @@ export const BLOCKS = {
   12: { tiles: { top: TILE.GOLD_ORE, side: TILE.GOLD_ORE, bottom: TILE.GOLD_ORE } },
   13: { tiles: { top: TILE.DIAMOND_ORE, side: TILE.DIAMOND_ORE, bottom: TILE.DIAMOND_ORE } },
   14: { tiles: { top: TILE.BEDROCK, side: TILE.BEDROCK, bottom: TILE.BEDROCK } },
+  15: { tiles: { top: TILE.FURNACE_TOP, side: TILE.FURNACE_FRONT, bottom: TILE.FURNACE_TOP } },
 }
