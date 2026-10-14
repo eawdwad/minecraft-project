@@ -110,6 +110,27 @@ export function generateTerrain(world) {
     }
   }
 
+  // 맨 아래 bedrock 층
+  for (let x = 0; x < WORLD_X; x += 1) {
+    for (let z = 0; z < WORLD_Z; z += 1) {
+      world.set(x, 0, z, 14)
+    }
+  }
+
+  // 광물 매장 (돌 블록만 교체, 깊을수록 희귀 광물)
+  for (let x = 0; x < WORLD_X; x += 1) {
+    for (let z = 0; z < WORLD_Z; z += 1) {
+      for (let y = 1; y < WORLD_Y; y += 1) {
+        if (world.get(x, y, z) !== 3) continue
+        const r = hash2(x * 7 + y * 131, z * 5 + y * 97, 555)
+        if (y <= 9 && r < 0.004) world.set(x, y, z, 13) // 다이아몬드
+        else if (y <= 13 && r < 0.011) world.set(x, y, z, 12) // 금
+        else if (y <= 18 && r < 0.024) world.set(x, y, z, 11) // 철
+        else if (y <= 24 && r < 0.045) world.set(x, y, z, 10) // 석탄
+      }
+    }
+  }
+
   // 나무 심기
   for (let x = 2; x < WORLD_X - 2; x += 1) {
     for (let z = 2; z < WORLD_Z - 2; z += 1) {

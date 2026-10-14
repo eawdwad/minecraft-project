@@ -233,6 +233,210 @@
   pointer-events: none;
 }
 
+.slot__count {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 3px #000;
+  pointer-events: none;
+}
+
+/* 채굴 진행 바 (조준점 아래) */
+.mc__mining {
+  position: absolute;
+  top: calc(50% + 18px);
+  left: 50%;
+  width: 84px;
+  height: 7px;
+  margin-left: -42px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.mc__mining-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #9be264, #62a83f);
+}
+
+/* 토스트 메시지 */
+.mc__toasts {
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.mc__toast {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(16, 22, 34, 0.78);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+}
+
+.mc__toast--warn {
+  background: rgba(150, 46, 34, 0.85);
+}
+
+/* 인벤토리 / 제작 패널 */
+.mc__inv {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: rgba(8, 12, 20, 0.82);
+  backdrop-filter: blur(5px);
+  color: #eef3fb;
+  overflow-y: auto;
+}
+
+.mc__inv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mc__inv-head h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #fff;
+}
+
+.mc__inv-close {
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.mc__inv-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.mc__inv-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.mc__inv-label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: #9fd4ff;
+}
+
+.mc__grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.mc__inv-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b9c6d8;
+}
+
+.mc__recipes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mc__recipe {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.mc__recipe--off {
+  opacity: 0.45;
+}
+
+.mc__recipe-out,
+.mc__cost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mc__recipe-out img,
+.mc__cost img {
+  width: 22px;
+  height: 22px;
+  image-rendering: pixelated;
+}
+
+.mc__recipe-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mc__cost em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  color: #9be264;
+}
+
+.mc__cost--lack {
+  color: #ff8f7a !important;
+}
+
+.mc__craft {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(180deg, #62a83f, #4a8a2e);
+  cursor: pointer;
+}
+
+.mc__craft:disabled {
+  background: rgba(255, 255, 255, 0.12);
+  color: #9aa7b8;
+  cursor: not-allowed;
+}
+
 /* 하단 도움말 */
 .mc__help {
   display: flex;
@@ -262,6 +466,14 @@ kbd {
   .slot {
     width: 40px;
     height: 40px;
+  }
+
+  .mc__inv-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mc__grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .page__title {

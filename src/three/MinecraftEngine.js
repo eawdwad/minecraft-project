@@ -1,5 +1,13 @@
 import * as THREE from 'three'
-import { createAtlasTexture, HOTBAR } from './textures'
+import { createAtlasTexture } from './textures'
+import {
+  ITEMS,
+  BLOCK_PROPS,
+  canHarvest,
+  miningSpeed,
+  requiredToolText,
+  RECIPES,
+} from './items'
 import {
   World,
   generateTerrain,
@@ -23,18 +31,23 @@ const SPRINT_SPEED = 7.0
 const FLY_SPEED = 10
 const REACH = 6
 const MAX_PITCH = Math.PI / 2 - 0.02
+const HOTBAR_SIZE = 9
+const INVENTORY_SIZE = 36
 
 export default class MinecraftEngine {
   constructor(container, options = {}) {
     this.container = container
     this.onState = options.onState || (() => {})
     this.onFps = options.onFps || (() => {})
-    this.selected = options.selected ?? HOTBAR[0]
+    this.onInventory = options.onInventory || (() => {})
+    this.onToast = options.onToast || (() => {})
+    this.onMining = options.onMining || (() => {})
 
     // active: 게임 진행 중 여부. locked: 포인터 락 사용 여부.
     this.active = false
     this.locked = false
     this.lockBlocked = false // 이 환경에서 포인터 락이 아예 불가능한 경우
+    this.inventoryOpen = false
     this.dragging = false
     this.dragButton = 0
     this.dragMoved = 0
@@ -45,6 +58,19 @@ export default class MinecraftEngine {
     this.fly = false
     this.onGround = false
     this.hit = null
+
+    // 채굴 상태
+    this.miningHeld = false
+    this.miningTarget = null
+    this.miningProgress = 0
+
+    // 인벤토리 (앞 9칸 = 핫바)
+    this.slots = new Array(INVENTORY_SIZE).fill(null)
+    this.hotbarIndex = 0
+
+    // 토스트
+    this.toastSeq = 0
+    this.toastCooldown = 0
 
     // 월드 + 장면
     this.world = new World()
@@ -96,6 +122,7 @@ export default class MinecraftEngine {
 
     this.bindEvents()
     this.applyCamera()
+    this.emitInventory()
     this.loop()
   }
 
@@ -104,18 +131,31 @@ export default class MinecraftEngine {
   bindEvents() {
     this.handleKeyDown = (e) => {
       this.keys.add(e.code)
-      if (e.code === 'KeyF') this.fly = !this.fly
-      // 포인터 락을 못 쓰는 환경에서는 Esc로 일시정지
-      if (e.code === 'Escape' && this.active && !this.locked) {
-        this.active = false
-        this.notify()
+      if (e.code === 'KeyF' && !this.inventoryOpen) this.fly = !this.fly
+      if (e.code === 'KeyE' && this.active) {
+        e.preventDefault()
+        this.toggleInventory()
+      }
+      // Esc: 인벤토리 닫기 → 포인터 락 없는 환경에선 일시정지
+      if (e.code === 'Escape') {
+        if (this.inventoryOpen) {
+          this.toggleInventory()
+        } else if (this.active && !this.locked) {
+          this.active = false
+          this.miningHeld = false
+          this.notify()
+        }
       }
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault()
       }
     }
     this.handleKeyUp = (e) => this.keys.delete(e.code)
-    this.handleBlur = () => this.keys.clear()
+    this.handleBlur = () => {
+      this.keys.clear()
+      this.miningHeld = false
+      this.miningProgress = 0
+    }
 
     this.handleMouseMove = (e) => {
       if (this.locked) {
@@ -137,42 +177,68 @@ export default class MinecraftEngine {
     }
 
     this.handleMouseDown = (e) => {
-      if (!this.active) return
+      if (!this.active || this.inventoryOpen) return
       if (this.locked) {
-        if (e.button === 0) this.breakBlock()
-        else if (e.button === 2) this.placeBlock()
+        this.dragButton = e.button
+        if (e.button === 0) {
+          this.miningHeld = true
+          this.miningProgress = 0
+          this.miningTarget = null
+        } else if (e.button === 2) {
+          this.placeBlock()
+        }
         return
       }
-      // 대체 모드: 캔버스 위에서만 드래그 시작 (UI 클릭은 무시)
+      // 대체 모드: 캔버스 위에서만 시작 (UI 클릭은 무시)
       if (!this.renderer.domElement.contains(e.target)) return
       this.dragging = true
       this.dragButton = e.button
       this.dragMoved = 0
       this.lastX = e.clientX
       this.lastY = e.clientY
+      if (e.button === 0) {
+        this.miningHeld = true
+        this.miningProgress = 0
+        this.miningTarget = null
+      }
       e.preventDefault()
     }
 
-    this.handleMouseUp = () => {
-      if (!this.dragging) return
+    this.handleMouseUp = (e) => {
+      const wasDragging = this.dragging
       const wasClick = this.dragMoved < 6
-      const button = this.dragButton
+      const button = wasDragging ? this.dragButton : (e && typeof e.button === 'number' ? e.button : this.dragButton)
       this.dragging = false
-      if (!this.active || this.locked) return
-      if (!wasClick) return
-      if (button === 0) this.breakBlock()
-      else if (button === 2) this.placeBlock()
+      // 버튼 종류와 무관하게 좌클릭 채굴은 종료 (놓침 방지)
+      this.miningHeld = false
+      this.miningProgress = 0
+      this.miningTarget = null
+      if (!this.active || this.locked || this.inventoryOpen) return
+      if (!wasDragging) return
+      // 대체 모드: 거의 안 움직인 우클릭만 설치
+      if (wasClick && button === 2) this.placeBlock()
+    }
+
+    // 창 밖으로 나가면 채굴/드래그 상태를 확실히 해제
+    this.handleMouseLeave = () => {
+      this.dragging = false
+      this.miningHeld = false
+      this.miningProgress = 0
+      this.miningTarget = null
     }
 
     this.handleContextMenu = (e) => e.preventDefault()
     this.handlePointerLockChange = () => {
       const locked = document.pointerLockElement === this.renderer.domElement
+      const wasLocked = this.locked
       this.locked = locked
       if (locked) {
+        this.hasLocked = true
         this.active = true
-      } else if (!this.lockBlocked) {
-        // 사용자가 Esc로 포인터 락을 해제한 경우 → 일시정지
+      } else if (wasLocked && !this.lockBlocked) {
+        // 실제로 잠금 상태였다가 풀린 경우에만 일시정지 (Esc 등)
         this.active = false
+        this.miningHeld = false
       }
       this.notify()
     }
@@ -188,6 +254,7 @@ export default class MinecraftEngine {
     document.addEventListener('mousemove', this.handleMouseMove)
     document.addEventListener('mousedown', this.handleMouseDown)
     document.addEventListener('mouseup', this.handleMouseUp)
+    document.addEventListener('mouseleave', this.handleMouseLeave)
     document.addEventListener('contextmenu', this.handleContextMenu)
     document.addEventListener('pointerlockchange', this.handlePointerLockChange)
     document.addEventListener('pointerlockerror', this.handlePointerLockError)
@@ -198,6 +265,10 @@ export default class MinecraftEngine {
   start() {
     this.active = true
     this.notify()
+    this.requestLock()
+  }
+
+  requestLock() {
     if (this.lockBlocked) return
     const el = this.renderer.domElement
     try {
@@ -229,11 +300,24 @@ export default class MinecraftEngine {
       locked: this.locked,
       fallback: this.active && !this.locked,
       lockBlocked: this.lockBlocked,
+      inventoryOpen: this.inventoryOpen,
     })
   }
 
-  setSelected(id) {
-    this.selected = id
+  toggleInventory() {
+    if (!this.active) return
+    this.inventoryOpen = !this.inventoryOpen
+    this.miningHeld = false
+    this.miningProgress = 0
+    this.miningTarget = null
+    this.keys.clear()
+    if (this.inventoryOpen) {
+      this.wasLocked = this.locked
+      if (this.locked) document.exitPointerLock()
+    } else if (this.wasLocked && !this.lockBlocked) {
+      this.requestLock()
+    }
+    this.notify()
   }
 
   resize() {
@@ -253,6 +337,7 @@ export default class MinecraftEngine {
     document.removeEventListener('mousemove', this.handleMouseMove)
     document.removeEventListener('mousedown', this.handleMouseDown)
     document.removeEventListener('mouseup', this.handleMouseUp)
+    document.removeEventListener('mouseleave', this.handleMouseLeave)
     document.removeEventListener('contextmenu', this.handleContextMenu)
     document.removeEventListener('pointerlockchange', this.handlePointerLockChange)
     document.removeEventListener('pointerlockerror', this.handlePointerLockError)
@@ -267,6 +352,116 @@ export default class MinecraftEngine {
     if (this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement)
     }
+  }
+
+  // ------------------------------------------------------------------ 인벤토리
+
+  getSelectedItem() {
+    return this.slots[this.hotbarIndex] || null
+  }
+
+  countItem(id) {
+    let total = 0
+    for (const slot of this.slots) {
+      if (slot && slot.id === id) total += slot.count
+    }
+    return total
+  }
+
+  addItem(id, count) {
+    const def = ITEMS[id]
+    if (!def || !count) return 0
+    const max = def.stack || 64
+    let remaining = count
+    for (let i = 0; i < this.slots.length && remaining > 0; i += 1) {
+      const slot = this.slots[i]
+      if (slot && slot.id === id && slot.count < max) {
+        const add = Math.min(max - slot.count, remaining)
+        slot.count += add
+        remaining -= add
+      }
+    }
+    for (let i = 0; i < this.slots.length && remaining > 0; i += 1) {
+      if (!this.slots[i]) {
+        const add = Math.min(max, remaining)
+        this.slots[i] = { id, count: add }
+        remaining -= add
+      }
+    }
+    this.emitInventory()
+    return count - remaining
+  }
+
+  removeItems(id, count) {
+    let remaining = count
+    for (let i = 0; i < this.slots.length && remaining > 0; i += 1) {
+      const slot = this.slots[i]
+      if (!slot || slot.id !== id) continue
+      const take = Math.min(slot.count, remaining)
+      slot.count -= take
+      remaining -= take
+      if (slot.count <= 0) this.slots[i] = null
+    }
+    this.emitInventory()
+    return count - remaining
+  }
+
+  setHotbarIndex(index) {
+    const n = Math.max(0, Math.min(HOTBAR_SIZE - 1, index))
+    this.hotbarIndex = n
+    this.emitInventory()
+  }
+
+  cycleHotbar(delta) {
+    this.setHotbarIndex((this.hotbarIndex + delta + HOTBAR_SIZE) % HOTBAR_SIZE)
+  }
+
+  // 메인 인벤토리 칸을 현재 핫바 칸과 맞바꾼다 (도구를 핫바로 옮길 때 사용)
+  swapWithHotbar(index) {
+    if (index < HOTBAR_SIZE || index >= this.slots.length) return
+    const tmp = this.slots[index]
+    this.slots[index] = this.slots[this.hotbarIndex]
+    this.slots[this.hotbarIndex] = tmp
+    this.emitInventory()
+  }
+
+  craft(recipeId) {
+    const recipe = RECIPES.find((r) => r.id === recipeId)
+    if (!recipe) return false
+    const ok = recipe.cost.every((c) => this.countItem(c.id) >= c.count)
+    if (!ok) return false
+    for (const c of recipe.cost) this.removeItems(c.id, c.count)
+    const added = this.addItem(recipe.output.id, recipe.output.count)
+    if (added > 0) {
+      const def = ITEMS[recipe.output.id]
+      this.showToast(`🔨 ${def.name} x${added} 제작`)
+    }
+    this.emitInventory()
+    return added > 0
+  }
+
+  snapshot() {
+    return {
+      slots: this.slots.map((s) => (s ? { id: s.id, count: s.count } : null)),
+      hotbarIndex: this.hotbarIndex,
+    }
+  }
+
+  emitInventory() {
+    this.onInventory(this.snapshot())
+  }
+
+  showToast(text, warning = false) {
+    if (warning) {
+      if (this.toastCooldown > 0) return
+      this.toastCooldown = 0.75
+    }
+    this.toastSeq += 1
+    this.onToast({ id: this.toastSeq, text, warning })
+  }
+
+  emitMining(p) {
+    this.onMining(p)
   }
 
   // ------------------------------------------------------------------ 청크
@@ -334,7 +529,11 @@ export default class MinecraftEngine {
   }
 
   update(dt) {
-    if (!this.active) return
+    this.toastCooldown = Math.max(0, this.toastCooldown - dt)
+    if (!this.active || this.inventoryOpen) {
+      this.emitMining(0)
+      return
+    }
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
 
@@ -376,6 +575,7 @@ export default class MinecraftEngine {
 
     this.applyCamera()
     this.updateHighlight()
+    this.updateMining(dt)
   }
 
   tryMove(axis, amount) {
@@ -480,24 +680,94 @@ export default class MinecraftEngine {
     }
   }
 
-  // ---------------------------------------------------------- 블록 캐기/설치
+  // ---------------------------------------------------------- 채굴 (시간 기반)
+
+  updateMining(dt) {
+    if (!this.miningHeld || !this.hit) {
+      this.miningTarget = null
+      this.miningProgress = 0
+      this.emitMining(0)
+      return
+    }
+    const { x, y, z } = this.hit
+    const id = this.world.get(x, y, z)
+    const props = BLOCK_PROPS[id]
+    if (!props || props.hardness === Infinity) {
+      this.miningProgress = 0
+      this.emitMining(0)
+      return
+    }
+
+    // 조준한 블록이 바뀌면 진행도 초기화
+    if (
+      !this.miningTarget ||
+      this.miningTarget.x !== x ||
+      this.miningTarget.y !== y ||
+      this.miningTarget.z !== z
+    ) {
+      this.miningTarget = { x, y, z }
+      this.miningProgress = 0
+    }
+
+    const held = this.getSelectedItem()
+    if (!canHarvest(id, held)) {
+      this.miningProgress = 0
+      this.emitMining(0)
+      const heldItem = held ? ITEMS[held.id] : null
+      const alt = heldItem ? ` (${heldItem.name}으로는 불가)` : ''
+      this.showToast(`⛔ ${requiredToolText(id)}${alt}`, true)
+      return
+    }
+
+    const speed = miningSpeed(id, held)
+    this.miningProgress += dt * speed
+    this.emitMining(Math.min(1, this.miningProgress / props.hardness))
+
+    if (this.miningProgress >= props.hardness) {
+      this.breakBlock()
+      this.miningProgress = 0
+      this.miningTarget = null
+      this.emitMining(0)
+    }
+  }
 
   breakBlock() {
     if (!this.hit) return
-    this.world.set(this.hit.x, this.hit.y, this.hit.z, 0)
-    this.updateChunkFor(this.hit.x, this.hit.z)
+    const { x, y, z } = this.hit
+    const id = this.world.get(x, y, z)
+    const props = BLOCK_PROPS[id]
+    if (!props || props.hardness === Infinity) return
+    if (!canHarvest(id, this.getSelectedItem())) return
+
+    this.world.set(x, y, z, 0)
+    this.updateChunkFor(x, z)
+
+    if (props.drops) {
+      const added = this.addItem(props.drops, 1)
+      if (added > 0) {
+        const def = ITEMS[props.drops]
+        this.showToast(`+${added} ${def.name}`)
+      }
+    }
   }
 
   placeBlock() {
     if (!this.hit) return
+    const held = this.getSelectedItem()
+    if (!held) return
+    const def = ITEMS[held.id]
+    if (!def || !def.block) return
+
     const nx = this.hit.x + this.hit.nx
     const ny = this.hit.y + this.hit.ny
     const nz = this.hit.z + this.hit.nz
     if (!this.world.inBounds(nx, ny, nz)) return
     if (this.world.get(nx, ny, nz) !== 0) return
     if (this.blockIntersectsPlayer(nx, ny, nz)) return
-    this.world.set(nx, ny, nz, this.selected)
+
+    this.world.set(nx, ny, nz, held.id)
     this.updateChunkFor(nx, nz)
+    this.removeItems(held.id, 1)
   }
 
   blockIntersectsPlayer(bx, by, bz) {
@@ -520,8 +790,11 @@ export default class MinecraftEngine {
       active: this.active,
       locked: this.locked,
       lockBlocked: this.lockBlocked,
-      selected: this.selected,
+      inventoryOpen: this.inventoryOpen,
+      hotbarIndex: this.hotbarIndex,
+      held: this.getSelectedItem(),
       hit: this.hit,
+      slots: this.snapshot().slots,
       blocks: this.world.data.length,
     }
   }
