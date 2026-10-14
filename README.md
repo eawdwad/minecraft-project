@@ -1,16 +1,46 @@
-# React + Vite
+# ⛏️ 미니 마인크래프트 (Mini Minecraft)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Three.js + React로 만든 브라우저용 복셀 샌드박스 게임입니다.
 
-Currently, two official plugins are available:
+🔗 **플레이 (GitHub Pages)**: https://eawdwad.github.io/minecraft-project/
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 조작법
 
-## React Compiler
+| 입력 | 동작 |
+| --- | --- |
+| `W` `A` `S` `D` | 이동 |
+| `Space` | 점프 |
+| `Shift` | 달리기 |
+| `F` | 비행 모드 토글 |
+| 좌클릭 (꾹) | 블록 캐기 · 동물 공격 |
+| 우클릭 | 블록 설치 · 음식 먹기 · 화로 열기 |
+| `E` | 인벤토리 / 제작 |
+| `1`~`9` / 마우스 휠 | 아이템 선택 |
+| `Esc` | 인벤토리·화로 닫기 / 일시정지 |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+> 포인터 락이 차단된 환경(일부 iframe·원격 데스크톱 등)에서는 자동으로 **드래그 시점 회전** 모드로 동작합니다.
 
-## Expanding the Oxlint configuration
+## 주요 기능
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- **복셀 월드**: 64×32×64 지형, 청크 단위 면 컬링 메싱, 좌표 기반 절차적 텍스처 아틀라스(외부 이미지 없음)
+- **채굴/설치**: 커스텀 복셀 DDA 레이캐스트, 시간 기반 채굴 진행도
+- **도구 티어**: 나무 → 돌 → 철 → 다이아몬드. 블록마다 필요한 최소 티어가 있어, 낮은 티어로는 캘 수 없고 올바른 도구일 때만 속도 보너스 적용
+- **제작**: 레시피 목록 UI로 도구 12종·갑옷 12종·화로 등을 제작
+- **갑옷 & 생존**: 체력 20 · 허기 20 바, 갑옷 4부위 장착과 데미지 경감, 낙하 데미지, 굶주림, 체력 재생
+- **동물 사냥**: 소·돼지가 배회하며, 공격해 잡으면 고기(그리고 소는 가죽)를 드롭
+- **화로 조리**: 화로를 설치하고 우클릭하면 조리 UI가 열려, 석탄을 연료로 날고기를 구워 허기를 더 많이 회복
+
+## 개발
+
+```bash
+npm install
+npm run dev      # 개발 서버
+npm run build    # 프로덕션 빌드 (dist/)
+npm run preview  # 빌드 결과 미리보기
+npm run deploy   # 빌드 후 gh-pages 브랜치로 배포
+```
+
+## 배포 방식
+
+- `vite.config.js`에서 build 시 base를 `/minecraft-project/`로 설정합니다 (GitHub Pages 프로젝트 경로).
+- `npm run deploy`가 `dist/`를 `gh-pages` 브랜치로 푸시하고, GitHub Pages가 그 브랜치를 서빙합니다.
