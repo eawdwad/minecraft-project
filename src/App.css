@@ -1,0 +1,257 @@
+.page {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 28px 16px 48px;
+}
+
+.page__header {
+  text-align: center;
+}
+
+.page__title {
+  margin: 0 0 6px;
+  font-size: 30px;
+  letter-spacing: -0.6px;
+  color: var(--text-h);
+}
+
+.page__subtitle {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------- 게임 영역 */
+
+.mc {
+  width: 100%;
+  max-width: 1100px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mc__stage {
+  position: relative;
+  width: 100%;
+  height: min(74vh, 700px);
+  min-height: 360px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #9fd4ff;
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px var(--border);
+  cursor: crosshair;
+}
+
+.mc-canvas {
+  display: block;
+}
+
+/* 조준점 */
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  pointer-events: none;
+}
+
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+
+.crosshair::before {
+  top: 10px;
+  left: 0;
+  width: 22px;
+  height: 2px;
+}
+
+.crosshair::after {
+  top: 0;
+  left: 10px;
+  width: 2px;
+  height: 22px;
+}
+
+.mc__fps {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #eaf6ff;
+  background: rgba(10, 16, 28, 0.45);
+  pointer-events: none;
+}
+
+/* 시작/일시정지 오버레이 */
+.mc__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: #f8fafc;
+  background: rgba(10, 14, 24, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.mc__overlay h2 {
+  margin: 0;
+  font-size: 26px;
+  color: #fff;
+}
+
+.mc__overlay p {
+  margin: 0;
+  max-width: 520px;
+  font-size: 15px;
+  color: #dbe4f3;
+}
+
+.mc__hint {
+  font-size: 13px !important;
+  opacity: 0.8;
+}
+
+.mc__btn {
+  margin-top: 6px;
+  padding: 13px 30px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(180deg, #62a83f, #4a8a2e);
+  box-shadow: 0 8px 20px rgba(74, 138, 46, 0.45);
+  transition:
+    transform 0.12s ease,
+    filter 0.2s ease;
+}
+
+.mc__btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.mc__btn:active {
+  transform: translateY(0);
+}
+
+/* 핫바 */
+.hotbar {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(12, 16, 26, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.slot {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.slot img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.slot--active {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35) inset;
+}
+
+.slot__key {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+}
+
+.hotbar__name {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translate(-50%, 100%);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px #000;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 하단 도움말 */
+.mc__help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+kbd {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  margin-right: 2px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+
+@media (max-width: 720px) {
+  .mc__stage {
+    height: min(62vh, 560px);
+  }
+
+  .slot {
+    width: 40px;
+    height: 40px;
+  }
+
+  .page__title {
+    font-size: 24px;
+  }
+}
