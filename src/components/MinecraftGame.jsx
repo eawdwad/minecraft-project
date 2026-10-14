@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MinecraftEngine from '../three/MinecraftEngine'
 import { BLOCKS, HOTBAR, tileDataURL } from '../three/textures'
 
+const INITIAL_STATE = { running: false, locked: false, fallback: false, lockBlocked: false }
+
 export default function MinecraftGame() {
   const containerRef = useRef(null)
   const engineRef = useRef(null)
 
-  const [locked, setLocked] = useState(false)
+  const [state, setState] = useState(INITIAL_STATE)
   const [selected, setSelected] = useState(HOTBAR[0])
   const [fps, setFps] = useState(0)
 
@@ -23,7 +25,7 @@ export default function MinecraftGame() {
   useEffect(() => {
     const container = containerRef.current
     const engine = new MinecraftEngine(container, {
-      onLockChange: setLocked,
+      onState: setState,
       onFps: setFps,
       selected: HOTBAR[0],
     })
@@ -50,7 +52,7 @@ export default function MinecraftGame() {
       if (n >= 1 && n <= HOTBAR.length) setSelected(HOTBAR[n - 1])
     }
     const handleWheel = (event) => {
-      if (!locked) return
+      if (!state.running) return
       setSelected((prev) => {
         const i = HOTBAR.indexOf(prev)
         const next = (i + (event.deltaY > 0 ? 1 : -1) + HOTBAR.length) % HOTBAR.length
@@ -63,24 +65,34 @@ export default function MinecraftGame() {
       window.removeEventListener('keydown', handleKey)
       window.removeEventListener('wheel', handleWheel)
     }
-  }, [locked])
+  }, [state.running])
 
-  const start = useCallback(() => engineRef.current?.requestLock(), [])
+  const start = useCallback(() => engineRef.current?.start(), [])
+
+  const { running, locked, fallback, lockBlocked } = state
 
   return (
     <div className="mc">
       <div className="mc__stage" ref={containerRef}>
-        {locked && <div className="crosshair" aria-hidden="true" />}
+        {running && <div className="crosshair" aria-hidden="true" />}
         <div className="mc__fps">{fps} FPS</div>
 
-        {!locked && (
+        {running && fallback && (
+          <div className="mc__mode">드래그: 시점 회전</div>
+        )}
+
+        {!running && (
           <div className="mc__overlay">
             <h2>⛏️ 미니 마인크래프트</h2>
             <p>복셀 월드를 돌아다니며 블록을 캐고 쌓아보세요.</p>
             <button type="button" className="mc__btn" onClick={start}>
-              클릭하여 시작
+              게임 시작
             </button>
-            <p className="mc__hint">시작하면 마우스가 고정됩니다. 빠져나오려면 Esc.</p>
+            <p className="mc__hint">
+              {lockBlocked
+                ? '이 환경은 포인터 잠금이 제한되어 있어, 드래그로 시점을 회전합니다.'
+                : '시작하면 마우스가 고정됩니다. 빠져나오려면 Esc.'}
+            </p>
           </div>
         )}
 
@@ -115,7 +127,7 @@ export default function MinecraftGame() {
         <span>
           <kbd>F</kbd> 비행 모드
         </span>
-        <span>좌클릭 캐기 · 우클릭 설치</span>
+        <span>{locked ? '마우스 시점 · 좌클릭 캐기 · 우클릭 설치' : '드래그 시점 · 클릭 캐기 · 우클릭 설치'}</span>
         <span>
           <kbd>1</kbd>~<kbd>9</kbd> / 휠 블록 선택
         </span>

@@ -100,6 +100,19 @@
   pointer-events: none;
 }
 
+.mc__mode {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(74, 138, 46, 0.75);
+  pointer-events: none;
+}
+
 /* 시작/일시정지 오버레이 */
 .mc__overlay {
   position: absolute;

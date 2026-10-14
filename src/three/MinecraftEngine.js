@@ -27,11 +27,20 @@ const MAX_PITCH = Math.PI / 2 - 0.02
 export default class MinecraftEngine {
   constructor(container, options = {}) {
     this.container = container
-    this.onLockChange = options.onLockChange || (() => {})
+    this.onState = options.onState || (() => {})
     this.onFps = options.onFps || (() => {})
     this.selected = options.selected ?? HOTBAR[0]
 
+    // active: 게임 진행 중 여부. locked: 포인터 락 사용 여부.
+    this.active = false
     this.locked = false
+    this.lockBlocked = false // 이 환경에서 포인터 락이 아예 불가능한 경우
+    this.dragging = false
+    this.dragButton = 0
+    this.dragMoved = 0
+    this.lastX = 0
+    this.lastY = 0
+
     this.keys = new Set()
     this.fly = false
     this.onGround = false
@@ -96,6 +105,11 @@ export default class MinecraftEngine {
     this.handleKeyDown = (e) => {
       this.keys.add(e.code)
       if (e.code === 'KeyF') this.fly = !this.fly
+      // 포인터 락을 못 쓰는 환경에서는 Esc로 일시정지
+      if (e.code === 'Escape' && this.active && !this.locked) {
+        this.active = false
+        this.notify()
+      }
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         e.preventDefault()
       }
@@ -104,22 +118,67 @@ export default class MinecraftEngine {
     this.handleBlur = () => this.keys.clear()
 
     this.handleMouseMove = (e) => {
-      if (!this.locked) return
-      this.yaw -= e.movementX * 0.0022
-      this.pitch -= e.movementY * 0.0022
+      if (this.locked) {
+        this.yaw -= e.movementX * 0.0022
+        this.pitch -= e.movementY * 0.0022
+        this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch))
+        return
+      }
+      // 대체 모드: 드래그로 시점 회전
+      if (!this.active || !this.dragging) return
+      const dx = e.clientX - this.lastX
+      const dy = e.clientY - this.lastY
+      this.lastX = e.clientX
+      this.lastY = e.clientY
+      this.dragMoved += Math.abs(dx) + Math.abs(dy)
+      this.yaw -= dx * 0.0045
+      this.pitch -= dy * 0.0045
       this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch))
     }
 
     this.handleMouseDown = (e) => {
-      if (!this.locked) return
-      if (e.button === 0) this.breakBlock()
-      else if (e.button === 2) this.placeBlock()
+      if (!this.active) return
+      if (this.locked) {
+        if (e.button === 0) this.breakBlock()
+        else if (e.button === 2) this.placeBlock()
+        return
+      }
+      // 대체 모드: 캔버스 위에서만 드래그 시작 (UI 클릭은 무시)
+      if (!this.renderer.domElement.contains(e.target)) return
+      this.dragging = true
+      this.dragButton = e.button
+      this.dragMoved = 0
+      this.lastX = e.clientX
+      this.lastY = e.clientY
+      e.preventDefault()
+    }
+
+    this.handleMouseUp = () => {
+      if (!this.dragging) return
+      const wasClick = this.dragMoved < 6
+      const button = this.dragButton
+      this.dragging = false
+      if (!this.active || this.locked) return
+      if (!wasClick) return
+      if (button === 0) this.breakBlock()
+      else if (button === 2) this.placeBlock()
     }
 
     this.handleContextMenu = (e) => e.preventDefault()
     this.handlePointerLockChange = () => {
-      this.locked = document.pointerLockElement === this.renderer.domElement
-      this.onLockChange(this.locked)
+      const locked = document.pointerLockElement === this.renderer.domElement
+      this.locked = locked
+      if (locked) {
+        this.active = true
+      } else if (!this.lockBlocked) {
+        // 사용자가 Esc로 포인터 락을 해제한 경우 → 일시정지
+        this.active = false
+      }
+      this.notify()
+    }
+    this.handlePointerLockError = () => {
+      this.lockBlocked = true
+      this.notify()
     }
     this.handleResize = () => this.resize()
 
@@ -128,13 +187,49 @@ export default class MinecraftEngine {
     window.addEventListener('blur', this.handleBlur)
     document.addEventListener('mousemove', this.handleMouseMove)
     document.addEventListener('mousedown', this.handleMouseDown)
+    document.addEventListener('mouseup', this.handleMouseUp)
     document.addEventListener('contextmenu', this.handleContextMenu)
     document.addEventListener('pointerlockchange', this.handlePointerLockChange)
+    document.addEventListener('pointerlockerror', this.handlePointerLockError)
     window.addEventListener('resize', this.handleResize)
   }
 
-  requestLock() {
-    this.renderer.domElement.requestPointerLock?.()
+  // 게임 시작: 포인터 락을 시도하고, 안 되면 드래그 시점 모드로 진행한다.
+  start() {
+    this.active = true
+    this.notify()
+    if (this.lockBlocked) return
+    const el = this.renderer.domElement
+    try {
+      const result = el.requestPointerLock?.()
+      if (result && typeof result.catch === 'function') {
+        result.catch((err) => {
+          if (this.isLockBlockedError(err)) {
+            this.lockBlocked = true
+            this.notify()
+          }
+        })
+      }
+    } catch (err) {
+      if (this.isLockBlockedError(err)) {
+        this.lockBlocked = true
+        this.notify()
+      }
+    }
+  }
+
+  isLockBlockedError(err) {
+    const message = String((err && err.message) || err || '')
+    return message.includes('root document') || message.includes('not valid for pointer lock')
+  }
+
+  notify() {
+    this.onState({
+      running: this.active,
+      locked: this.locked,
+      fallback: this.active && !this.locked,
+      lockBlocked: this.lockBlocked,
+    })
   }
 
   setSelected(id) {
@@ -157,8 +252,10 @@ export default class MinecraftEngine {
     window.removeEventListener('blur', this.handleBlur)
     document.removeEventListener('mousemove', this.handleMouseMove)
     document.removeEventListener('mousedown', this.handleMouseDown)
+    document.removeEventListener('mouseup', this.handleMouseUp)
     document.removeEventListener('contextmenu', this.handleContextMenu)
     document.removeEventListener('pointerlockchange', this.handlePointerLockChange)
+    document.removeEventListener('pointerlockerror', this.handlePointerLockError)
     window.removeEventListener('resize', this.handleResize)
 
     for (const mesh of this.chunks.values()) mesh.geometry.dispose()
@@ -237,6 +334,7 @@ export default class MinecraftEngine {
   }
 
   update(dt) {
+    if (!this.active) return
     const forward = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw))
     const right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw))
 
@@ -419,7 +517,9 @@ export default class MinecraftEngine {
       position: { x: this.pos.x, y: this.pos.y, z: this.pos.z },
       onGround: this.onGround,
       fly: this.fly,
+      active: this.active,
       locked: this.locked,
+      lockBlocked: this.lockBlocked,
       selected: this.selected,
       hit: this.hit,
       blocks: this.world.data.length,
